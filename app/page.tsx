@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { refreshStaleSymbols } from "@/lib/updateFunding";
 import SymbolForm from "@/components/SymbolForm";
 import SymbolTable from "@/components/SymbolTable";
 import StatsCards from "@/components/StatsCards";
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function HomePage() {
+  // Refresh any stale rows (>30s old) on each page load.
+  await refreshStaleSymbols();
   const symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
   const safe = JSON.parse(JSON.stringify(symbols));
 
@@ -17,7 +20,7 @@ export default async function HomePage() {
           Binance Funding Rate Tracker
         </h1>
         <p className="mt-1 text-sm text-neutral-400">
-          Live funding rates updated every minute via Binance Futures API.
+          Live funding rates — fetched on-demand from Binance Futures API.
         </p>
       </header>
 

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fetchPremiumIndex } from "@/lib/binance";
+import { refreshStaleSymbols } from "@/lib/updateFunding";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ const SymbolSchema = z.object({
 });
 
 export async function GET() {
+  // On-demand: refresh any rows older than 30s before returning.
+  await refreshStaleSymbols();
   const symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
   return NextResponse.json(symbols);
 }
@@ -40,7 +43,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Symbol already exists" }, { status: 409 });
   }
 
-  // Validate against Binance + seed initial data
   const data = await fetchPremiumIndex(name);
   if (!data) {
     return NextResponse.json(
