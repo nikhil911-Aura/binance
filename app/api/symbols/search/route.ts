@@ -21,7 +21,7 @@ async function loadSymbols(): Promise<string[]> {
   if (!res.ok) throw new Error(`exchangeInfo ${res.status}`);
   const data = (await res.json()) as ExchangeInfo;
   const symbols = data.symbols
-    .filter((s) => s.status === "TRADING" && s.contractType === "PERPETUAL")
+    .filter((s) => s.status === "TRADING")
     .map((s) => s.symbol)
     .sort();
   cache = { at: Date.now(), symbols };
