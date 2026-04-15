@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "./Toast";
 import QuickAddChips from "./QuickAddChips";
@@ -122,6 +122,37 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
     const id = setInterval(() => fetchRows(false), 30_000);
     return () => clearInterval(id);
   }, []);
+
+  // Auto-refresh as soon as any countdown hits zero (instead of waiting 30s).
+  // Tracks the funding-time we've already triggered for, so it only fires once
+  // per settlement. Uses a small delay + retry chain to give Binance a moment
+  // to publish the new nextFundingTime.
+  const triggeredForRef = useRef<number>(0);
+  useEffect(() => {
+    const expired = rows
+      .map((r) =>
+        r.nextFundingTime ? new Date(r.nextFundingTime).getTime() : 0,
+      )
+      .filter((t) => t > 0 && t <= now);
+    if (expired.length === 0) return;
+    const earliest = Math.min(...expired);
+    if (triggeredForRef.current === earliest) return;
+    triggeredForRef.current = earliest;
+
+    // Retry up to 4 times with growing backoff until rows advance past `earliest`.
+    const delays = [1500, 2500, 3500, 5000];
+    let cancelled = false;
+    (async () => {
+      for (const d of delays) {
+        if (cancelled) return;
+        await new Promise((r) => setTimeout(r, d));
+        await fetchRows(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [now, rows]);
 
   async function performDelete(row: SymbolRow) {
     setConfirmRow(null);
