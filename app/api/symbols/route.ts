@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fetchPremiumIndex } from "@/lib/binance";
 import { refreshStaleSymbols } from "@/lib/updateFunding";
+import { invalidateBinanceMetaCache } from "@/lib/binanceMeta";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+  invalidateBinanceMetaCache();
 
   const created = await prisma.symbol.create({
     data: {

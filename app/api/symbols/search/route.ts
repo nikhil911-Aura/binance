@@ -1,32 +1,7 @@
 import { NextResponse } from "next/server";
+import { loadTradableSymbols } from "@/lib/binanceMeta";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 3600;
-
-const BINANCE_API_URL =
-  process.env.BINANCE_API_URL ?? "https://fapi.binance.com";
-
-type ExchangeInfo = {
-  symbols: Array<{ symbol: string; status: string; contractType: string }>;
-};
-
-let cache: { at: number; symbols: string[] } | null = null;
-const TTL_MS = 60 * 60 * 1000; // 1h
-
-async function loadSymbols(): Promise<string[]> {
-  if (cache && Date.now() - cache.at < TTL_MS) return cache.symbols;
-  const res = await fetch(`${BINANCE_API_URL}/fapi/v1/exchangeInfo`, {
-    next: { revalidate: 3600 },
-  });
-  if (!res.ok) throw new Error(`exchangeInfo ${res.status}`);
-  const data = (await res.json()) as ExchangeInfo;
-  const symbols = data.symbols
-    .filter((s) => s.status === "TRADING")
-    .map((s) => s.symbol)
-    .sort();
-  cache = { at: Date.now(), symbols };
-  return symbols;
-}
 
 export async function GET(req: Request) {
   const q = (new URL(req.url).searchParams.get("q") ?? "")
@@ -34,11 +9,19 @@ export async function GET(req: Request) {
     .toUpperCase();
 
   try {
-    const all = await loadSymbols();
+    const all = await loadTradableSymbols();
     if (!q) return NextResponse.json(all.slice(0, 10));
+
     const starts = all.filter((s) => s.startsWith(q));
     const contains = all.filter((s) => !s.startsWith(q) && s.includes(q));
-    return NextResponse.json([...starts, ...contains].slice(0, 10));
+    const merged = [...starts, ...contains];
+
+    // User typed an exact symbol we don't have cached yet — surface it anyway
+    // so they never see "no results" for a symbol that actually exists.
+    if (merged.length === 0 && /^[A-Z0-9]{5,20}$/.test(q)) {
+      return NextResponse.json([q]);
+    }
+    return NextResponse.json(merged.slice(0, 10));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[search] failed:", msg);
@@ -48,6 +31,7 @@ export async function GET(req: Request) {
         { status: 451 },
       );
     }
+    if (/^[A-Z0-9]{5,20}$/.test(q)) return NextResponse.json([q]);
     return NextResponse.json([], { status: 200 });
   }
 }

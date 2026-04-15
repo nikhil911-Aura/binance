@@ -1,3 +1,5 @@
+import { loadFundingIntervals } from "./binanceMeta";
+
 const BINANCE_API_URL =
   process.env.BINANCE_API_URL ?? "https://fapi.binance.com";
 
@@ -13,36 +15,6 @@ export type FundingData = {
   nextFundingTime: Date;
   fundingInterval: number;
 };
-
-type FundingInfoEntry = { symbol: string; fundingIntervalHours: number };
-
-let intervalCache: { at: number; map: Map<string, number> } | null = null;
-const INTERVAL_TTL_MS = 60 * 60 * 1000;
-
-async function loadFundingIntervals(): Promise<Map<string, number>> {
-  if (intervalCache && Date.now() - intervalCache.at < INTERVAL_TTL_MS) {
-    return intervalCache.map;
-  }
-  try {
-    const res = await fetch(`${BINANCE_API_URL}/fapi/v1/fundingInfo`, {
-      next: { revalidate: 3600 },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) throw new Error(`fundingInfo ${res.status}`);
-    const rows = (await res.json()) as FundingInfoEntry[];
-    const map = new Map<string, number>();
-    for (const r of rows) {
-      if (typeof r.fundingIntervalHours === "number") {
-        map.set(r.symbol, r.fundingIntervalHours);
-      }
-    }
-    intervalCache = { at: Date.now(), map };
-    return map;
-  } catch (err) {
-    console.error("[binance] fundingInfo failed:", err);
-    return intervalCache?.map ?? new Map();
-  }
-}
 
 export async function fetchPremiumIndex(
   symbol: string,
