@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "./Toast";
 import QuickAddChips from "./QuickAddChips";
+import ConfirmDialog from "./ConfirmDialog";
 import {
   EVT_ERROR,
   EVT_PENDING,
@@ -66,6 +67,7 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
   const [pendingNames, setPendingNames] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmRow, setConfirmRow] = useState<SymbolRow | null>(null);
   const [filter, setFilter] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -121,8 +123,8 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
     return () => clearInterval(id);
   }, []);
 
-  async function onDelete(row: SymbolRow) {
-    if (!confirm(`Remove ${row.name}?`)) return;
+  async function performDelete(row: SymbolRow) {
+    setConfirmRow(null);
     setDeletingId(row.id);
     try {
       const res = await fetch(`/api/symbols/${row.id}`, { method: "DELETE" });
@@ -218,6 +220,25 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
         </button>
       </div>
 
+      <ConfirmDialog
+        open={confirmRow !== null}
+        title="Remove symbol?"
+        message={
+          <>
+            You are about to remove{" "}
+            <span className="font-mono font-semibold text-neutral-200">
+              {confirmRow?.name}
+            </span>{" "}
+            from your watchlist. This cannot be undone.
+          </>
+        }
+        confirmLabel="Remove"
+        cancelLabel="Cancel"
+        kind="danger"
+        onConfirm={() => confirmRow && performDelete(confirmRow)}
+        onCancel={() => setConfirmRow(null)}
+      />
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-neutral-900 text-left text-xs uppercase text-neutral-400">
@@ -286,7 +307,7 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => onDelete(row)}
+                      onClick={() => setConfirmRow(row)}
                       disabled={isDeleting}
                       className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
                     >
