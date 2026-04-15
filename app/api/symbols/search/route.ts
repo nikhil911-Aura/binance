@@ -40,7 +40,14 @@ export async function GET(req: Request) {
     const contains = all.filter((s) => !s.startsWith(q) && s.includes(q));
     return NextResponse.json([...starts, ...contains].slice(0, 10));
   } catch (err) {
-    console.error("[search] failed:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[search] failed:", msg);
+    if (msg.includes("451")) {
+      return NextResponse.json(
+        { error: "Binance API is geo-blocked from this region" },
+        { status: 451 },
+      );
+    }
     return NextResponse.json([], { status: 200 });
   }
 }
