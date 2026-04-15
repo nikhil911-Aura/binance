@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "cron": "tsx lib/cron.ts",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma migrate deploy && next build",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:studio": "prisma studio"
