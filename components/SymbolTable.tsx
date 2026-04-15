@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "./Toast";
 import QuickAddChips from "./QuickAddChips";
+import {
+  EVT_ERROR,
+  EVT_PENDING,
+  EVT_SUCCESS,
+  type SymbolRow as PendingRow,
+} from "@/lib/symbolEvents";
 
 type SymbolRow = {
   id: string;
@@ -57,6 +63,7 @@ function timeAgo(iso: string | undefined, now: number): string {
 
 export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
   const [rows, setRows] = useState<SymbolRow[]>(initial);
+  const [pendingNames, setPendingNames] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -66,6 +73,34 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
   const router = useRouter();
   const { toast } = useToast();
   const now = useNow(1000);
+
+  // Listen for optimistic-add events from SymbolForm / QuickAddChips
+  useEffect(() => {
+    const onPending = (e: Event) => {
+      const name = (e as CustomEvent<{ name: string }>).detail.name;
+      setPendingNames((p) => (p.includes(name) ? p : [...p, name]));
+    };
+    const onSuccess = (e: Event) => {
+      const row = (e as CustomEvent<{ row: PendingRow }>).detail.row;
+      setPendingNames((p) => p.filter((n) => n !== row.name));
+      setRows((r) => {
+        if (r.some((x) => x.id === row.id)) return r;
+        return [row as SymbolRow, ...r];
+      });
+    };
+    const onError = (e: Event) => {
+      const name = (e as CustomEvent<{ name: string }>).detail.name;
+      setPendingNames((p) => p.filter((n) => n !== name));
+    };
+    window.addEventListener(EVT_PENDING, onPending);
+    window.addEventListener(EVT_SUCCESS, onSuccess);
+    window.addEventListener(EVT_ERROR, onError);
+    return () => {
+      window.removeEventListener(EVT_PENDING, onPending);
+      window.removeEventListener(EVT_SUCCESS, onSuccess);
+      window.removeEventListener(EVT_ERROR, onError);
+    };
+  }, []);
 
   async function fetchRows(showSpinner = false) {
     if (showSpinner) setRefreshing(true);
@@ -136,7 +171,12 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
     return out;
   }, [rows, filter, sortKey, sortDir]);
 
-  if (rows.length === 0) {
+  // Filter out pending names that already exist as real rows (avoid dupe)
+  const visiblePending = pendingNames.filter(
+    (n) => !rows.some((r) => r.name === n),
+  );
+
+  if (rows.length === 0 && visiblePending.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-neutral-700 p-10 text-center">
         <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-neutral-800 text-2xl">
@@ -197,7 +237,21 @@ export default function SymbolTable({ initial }: { initial: SymbolRow[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-neutral-800">
-            {visible.length === 0 && (
+            {visiblePending.map((name) => (
+              <tr key={`pending-${name}`} className="animate-pulse bg-emerald-950/10">
+                <td className="px-4 py-3 font-mono font-semibold text-emerald-300">
+                  {name}
+                </td>
+                <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
+                <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
+                <td className="px-4 py-3"><Skeleton className="h-4 w-8" /></td>
+                <td className="px-4 py-3"><Skeleton className="h-3 w-12" /></td>
+                <td className="px-4 py-3 text-right text-xs text-emerald-400">
+                  Adding…
+                </td>
+              </tr>
+            ))}
+            {visible.length === 0 && visiblePending.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-6 text-center text-sm text-neutral-500">
                   No symbols match "{filter}"

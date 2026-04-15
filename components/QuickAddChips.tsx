@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "./Toast";
+import { emitError, emitPending, emitSuccess } from "@/lib/symbolEvents";
 
 const SUGGESTIONS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT"];
 
@@ -14,6 +15,7 @@ export default function QuickAddChips() {
 
   async function add(name: string) {
     setAdding(name);
+    emitPending(name);
     try {
       const res = await fetch("/api/symbols", {
         method: "POST",
@@ -22,12 +24,15 @@ export default function QuickAddChips() {
       });
       const data = await res.json();
       if (!res.ok) {
+        emitError(name);
         toast("error", data.error ?? "Failed to add");
       } else {
+        emitSuccess(data);
         toast("success", `Added ${data.name}`);
         startTransition(() => router.refresh());
       }
     } catch {
+      emitError(name);
       toast("error", "Network error");
     } finally {
       setAdding(null);

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "./Toast";
+import { emitError, emitPending, emitSuccess } from "@/lib/symbolEvents";
 
 export default function SymbolForm() {
   const [value, setValue] = useState("");
@@ -63,6 +64,11 @@ export default function SymbolForm() {
   async function submit(name: string) {
     if (!name) return;
     setSubmitting(true);
+    // Clear input immediately so the next add can start typing
+    setValue("");
+    setSuggestions([]);
+    setShowSuggestions(false);
+    emitPending(name);
     try {
       const res = await fetch("/api/symbols", {
         method: "POST",
@@ -71,15 +77,15 @@ export default function SymbolForm() {
       });
       const data = await res.json();
       if (!res.ok) {
+        emitError(name);
         toast("error", data.error ?? "Failed to add symbol");
         return;
       }
-      setValue("");
-      setSuggestions([]);
-      setShowSuggestions(false);
+      emitSuccess(data);
       toast("success", `Added ${data.name}`);
       startTransition(() => router.refresh());
     } catch {
+      emitError(name);
       toast("error", "Network error — check connection");
     } finally {
       setSubmitting(false);
