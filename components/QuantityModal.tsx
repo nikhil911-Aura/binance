@@ -2,41 +2,73 @@
 
 import { useEffect, useState } from "react";
 
+export type OrderResult = {
+  symbol: string;
+  success: boolean;
+  error?: string;
+};
+
 export default function QuantityModal({
   open,
   side,
   symbolCount,
+  symbols,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
   side: "BUY" | "SELL";
   symbolCount: number;
-  onConfirm: (qty: number) => void;
+  symbols: string[];
+  onConfirm: (qty: number) => Promise<OrderResult[] | null>;
   onCancel: () => void;
 }) {
-  const [qty, setQty] = useState("0.01");
+  const [qty, setQty] = useState("0.1");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [results, setResults] = useState<OrderResult[]>([]);
+
+  // Reset state when modal opens/closes
+  useEffect(() => {
+    if (open) {
+      setError("");
+      setResults([]);
+      setSubmitting(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-      if (e.key === "Enter") handleSubmit();
+      if (e.key === "Escape" && !submitting) onCancel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, qty]);
+  }, [open, submitting]);
 
   if (!open) return null;
 
-  function handleSubmit() {
+  async function handleSubmit() {
     const val = parseFloat(qty);
     if (isNaN(val) || val <= 0) {
       setError("Enter a valid positive quantity");
       return;
     }
-    onConfirm(val);
+    setError("");
+    setResults([]);
+    setSubmitting(true);
+    try {
+      const res = await onConfirm(val);
+      if (res) {
+        const failures = res.filter((r) => !r.success);
+        if (failures.length > 0) {
+          setResults(failures);
+        }
+        // If all succeeded, parent closes the modal
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   const isBuy = side === "BUY";
@@ -46,7 +78,7 @@ export default function QuantityModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={submitting ? undefined : onCancel} />
       <div className={`relative w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl ring-1 ${palette.ring}`}>
         <h3 className="text-base font-semibold text-neutral-100">
           {side} {symbolCount} Symbol{symbolCount !== 1 ? "s" : ""}
@@ -54,6 +86,17 @@ export default function QuantityModal({
         <p className="mt-1 text-sm text-neutral-400">
           Enter the quantity for each market order.
         </p>
+
+        {/* Symbol list */}
+        <div className="mt-3 flex flex-wrap gap-1">
+          {symbols.map((s) => (
+            <span key={s} className="rounded bg-neutral-800 px-2 py-0.5 font-mono text-xs text-neutral-300">
+              {s}
+            </span>
+          ))}
+        </div>
+
+        {/* Quantity input */}
         <div className="mt-4">
           <label className="text-xs uppercase text-neutral-500">Quantity per symbol</label>
           <input
@@ -61,27 +104,69 @@ export default function QuantityModal({
             step="any"
             min="0"
             value={qty}
-            onChange={(e) => { setQty(e.target.value); setError(""); }}
+            onChange={(e) => { setQty(e.target.value); setError(""); setResults([]); }}
             autoFocus
-            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            disabled={submitting}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
+            onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
           />
+          <p className="mt-1 text-xs text-neutral-500">
+            Min notional: <span className="text-amber-400">$5</span> per order (price x qty must exceed $5)
+          </p>
           {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         </div>
+
+        {/* Error results from failed orders */}
+        {results.length > 0 && (
+          <div className="mt-3 max-h-32 overflow-y-auto rounded-md border border-red-800/50 bg-red-950/30 p-3">
+            <p className="mb-1 text-xs font-medium text-red-300">
+              {results.length} order{results.length !== 1 ? "s" : ""} failed:
+            </p>
+            {results.map((r) => (
+              <div key={r.symbol} className="flex items-start gap-2 text-xs">
+                <span className="font-mono text-red-400">{r.symbol}</span>
+                <span className="text-neutral-400">{cleanError(r.error)}</span>
+              </div>
+            ))}
+            <p className="mt-2 text-xs text-amber-400">
+              Try increasing the quantity.
+            </p>
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+            disabled={submitting}
+            className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700 disabled:opacity-50"
           >
             Cancel
           </button>
           <button
             onClick={handleSubmit}
-            className={`rounded-md px-4 py-2 text-sm font-medium text-white ${palette.bg} ${palette.hover}`}
+            disabled={submitting}
+            className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${palette.bg} ${palette.hover}`}
           >
-            Place {side} Order
+            {submitting && <Spinner className="h-4 w-4" />}
+            {submitting ? "Placing…" : `Place ${side} Order`}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Strip Binance prefix from error messages for cleaner display. */
+function cleanError(err?: string): string {
+  if (!err) return "Unknown error";
+  return err.replace(/^Binance testnet \d+:\s*/, "");
+}
+
+function Spinner({ className = "" }: { className?: string }) {
+  return (
+    <svg className={`animate-spin ${className}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
   );
 }

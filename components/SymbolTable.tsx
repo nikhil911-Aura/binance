@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useToast } from "./Toast";
 import QuickAddChips from "./QuickAddChips";
 import ConfirmDialog from "./ConfirmDialog";
-import QuantityModal from "./QuantityModal";
+import QuantityModal, { type OrderResult } from "./QuantityModal";
 import {
   EVT_ERROR,
   EVT_PENDING,
@@ -67,7 +67,7 @@ export default function SymbolTable({
   onPlaceOrders,
 }: {
   initial: SymbolRow[];
-  onPlaceOrders?: (symbols: string[], side: "BUY" | "SELL", qty: number) => Promise<void>;
+  onPlaceOrders?: (symbols: string[], side: "BUY" | "SELL", qty: number) => Promise<OrderResult[] | null>;
 }) {
   const [rows, setRows] = useState<SymbolRow[]>(initial);
   const [pendingNames, setPendingNames] = useState<string[]>([]);
@@ -189,15 +189,20 @@ export default function SymbolTable({
     else setSelected(new Set(rows.map((r) => r.name)));
   }
 
-  async function handlePlaceOrder(qty: number) {
-    if (!onPlaceOrders || selected.size === 0 || !orderModal) return;
+  async function handlePlaceOrder(qty: number): Promise<OrderResult[] | null> {
+    if (!onPlaceOrders || selected.size === 0 || !orderModal) return null;
     setPlacing(true);
     try {
-      await onPlaceOrders(Array.from(selected), orderModal.side, qty);
-      setSelected(new Set());
+      const results = await onPlaceOrders(Array.from(selected), orderModal.side, qty);
+      const allSucceeded = results?.every((r) => r.success) ?? false;
+      if (allSucceeded) {
+        setSelected(new Set());
+        setOrderModal(null);
+      }
+      // If some failed, keep modal open so user can see errors + retry
+      return results;
     } finally {
       setPlacing(false);
-      setOrderModal(null);
     }
   }
 
@@ -246,6 +251,7 @@ export default function SymbolTable({
         open={orderModal !== null}
         side={orderModal?.side ?? "BUY"}
         symbolCount={selected.size}
+        symbols={Array.from(selected)}
         onConfirm={handlePlaceOrder}
         onCancel={() => setOrderModal(null)}
       />

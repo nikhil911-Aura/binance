@@ -4,6 +4,7 @@ import { useState } from "react";
 import SymbolTable from "./SymbolTable";
 import OrderPanel from "./OrderPanel";
 import { useToast } from "./Toast";
+import type { OrderResult } from "./QuantityModal";
 
 type SymbolRow = {
   id: string;
@@ -36,11 +37,12 @@ export default function Dashboard({
   const [orderVersion, setOrderVersion] = useState(0);
   const { toast } = useToast();
 
+  /** Returns results array so QuantityModal can display per-symbol errors. */
   async function handlePlaceOrders(
     symbols: string[],
     side: "BUY" | "SELL",
     quantity: number,
-  ) {
+  ): Promise<OrderResult[] | null> {
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -50,21 +52,27 @@ export default function Dashboard({
       const data = await res.json();
       if (!res.ok) {
         toast("error", data.error ?? "Failed to place orders");
-        return;
+        return null;
       }
-      const { successCount, failCount } = data;
+      const { results, successCount, failCount } = data as {
+        results: OrderResult[];
+        successCount: number;
+        failCount: number;
+      };
       if (successCount > 0) {
         toast(
           "success",
           `${side} placed: ${successCount} success${failCount > 0 ? `, ${failCount} failed` : ""}`,
         );
+        setOrderVersion((v) => v + 1);
       }
       if (failCount > 0 && successCount === 0) {
-        toast("error", `All ${failCount} orders failed`);
+        toast("error", `All ${failCount} orders failed — see details below`);
       }
-      setOrderVersion((v) => v + 1);
+      return results;
     } catch {
       toast("error", "Network error placing orders");
+      return null;
     }
   }
 
