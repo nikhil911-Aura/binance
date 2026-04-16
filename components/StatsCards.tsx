@@ -8,8 +8,10 @@ type Row = {
 };
 
 function useNow() {
-  const [now, setNow] = useState(() => Date.now());
+  // Start with null to avoid hydration mismatch (server time != client time)
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
@@ -38,7 +40,7 @@ export default function StatsCards({ rows }: { rows: Row[] }) {
 
   const upcoming = rows
     .map((r) => (r.nextFundingTime ? new Date(r.nextFundingTime).getTime() : 0))
-    .filter((t) => t > now);
+    .filter((t) => now !== null && t > now);
   const nextEvent = upcoming.length > 0 ? Math.min(...upcoming) : null;
 
   return (
@@ -70,7 +72,7 @@ export default function StatsCards({ rows }: { rows: Row[] }) {
       <Card
         label="Next Funding"
         value={
-          nextEvent === null ? "—" : fmtCountdown(nextEvent - now)
+          now === null ? "—" : nextEvent === null ? "—" : fmtCountdown(nextEvent - now)
         }
         mono
       />
