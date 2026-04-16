@@ -53,6 +53,40 @@ async function signedRequest<T>(
   return data as T;
 }
 
+// --- Testnet symbol validation (cached) ---
+
+type ExchangeInfo = {
+  symbols: Array<{ symbol: string; status: string }>;
+};
+
+let testnetSymbolsCache: { at: number; symbols: Set<string> } | null = null;
+const CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+export async function loadTestnetSymbols(): Promise<Set<string>> {
+  if (testnetSymbolsCache && Date.now() - testnetSymbolsCache.at < CACHE_TTL) {
+    return testnetSymbolsCache.symbols;
+  }
+  const res = await fetch(`${TESTNET_URL}/fapi/v1/exchangeInfo`, {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) throw new Error(`testnet exchangeInfo ${res.status}`);
+  const data = (await res.json()) as ExchangeInfo;
+  const symbols = new Set(
+    data.symbols.filter((s) => s.status === "TRADING").map((s) => s.symbol),
+  );
+  testnetSymbolsCache = { at: Date.now(), symbols };
+  return symbols;
+}
+
+export async function isTestnetSymbol(symbol: string): Promise<boolean> {
+  try {
+    const symbols = await loadTestnetSymbols();
+    return symbols.has(symbol);
+  } catch {
+    return true; // If we can't verify, allow the attempt
+  }
+}
+
 // --- Public types ---
 
 export type OrderResponse = {

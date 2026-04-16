@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { placeMarketOrder, closePosition } from "./binanceTestnet";
+import { placeMarketOrder, closePosition, isTestnetSymbol } from "./binanceTestnet";
 
 export type PlaceOrderInput = {
   symbol: string;
@@ -20,6 +20,12 @@ export async function placeOrders(
 ): Promise<PlaceResult[]> {
   const results = await Promise.allSettled(
     inputs.map(async ({ symbol, side, quantity }): Promise<PlaceResult> => {
+      // Pre-validate: check if symbol exists on testnet
+      const valid = await isTestnetSymbol(symbol);
+      if (!valid) {
+        throw new Error(`${symbol} is not available on the Binance testnet`);
+      }
+
       const res = await placeMarketOrder(symbol, side, quantity);
       const avgPrice = parseFloat(res.avgPrice) || null;
 

@@ -128,9 +128,16 @@ export default function QuantityModal({
                 <span className="text-neutral-400">{cleanError(r.error)}</span>
               </div>
             ))}
-            <p className="mt-2 text-xs text-amber-400">
-              Try increasing the quantity.
-            </p>
+            {results.some((r) => r.error?.includes("notional")) && (
+              <p className="mt-2 text-xs text-amber-400">
+                Try increasing the quantity (min $5 per order).
+              </p>
+            )}
+            {results.some((r) => r.error?.includes("not available on")) && (
+              <p className="mt-2 text-xs text-amber-400">
+                Some symbols only exist on mainnet, not on the testnet.
+              </p>
+            )}
           </div>
         )}
 
