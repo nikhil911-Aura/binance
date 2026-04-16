@@ -61,20 +61,29 @@ export async function placeOrders(
   });
 }
 
-/** Close orders by IDs: place opposite market orders and mark CLOSED. */
-export async function closeOrders(orderIds: string[]): Promise<PlaceResult[]> {
+/** Close orders: place opposite market orders and mark CLOSED.
+ *  Each input may specify a custom quantity; falls back to the stored quantity.
+ */
+export async function closeOrders(
+  inputs: { id: string; quantity?: number }[],
+): Promise<PlaceResult[]> {
+  const ids = inputs.map((i) => i.id);
+  const qtyOverride = new Map(inputs.map((i) => [i.id, i.quantity]));
+
   const orders = await prisma.order.findMany({
-    where: { id: { in: orderIds }, status: "OPEN" },
+    where: { id: { in: ids }, status: "OPEN" },
   });
 
   if (orders.length === 0) return [];
 
   const results = await Promise.allSettled(
     orders.map(async (order): Promise<PlaceResult> => {
+      const closeQty = qtyOverride.get(order.id) ?? order.quantity;
+
       const res = await closePosition(
         order.symbol,
         order.side as "BUY" | "SELL",
-        order.quantity,
+        closeQty,
       );
 
       // Get exit price, fall back to mark price if avgPrice is 0
@@ -87,23 +96,47 @@ export async function closeOrders(orderIds: string[]): Promise<PlaceResult[]> {
         }
       }
 
-      // Calculate profit if we have both prices
+      // Calculate profit using the actual close quantity
       let profit: number | null = null;
       if (exitPrice > 0 && order.entryPrice != null && order.entryPrice > 0) {
         profit =
           order.side === "BUY"
-            ? (exitPrice - order.entryPrice) * order.quantity
-            : (order.entryPrice - exitPrice) * order.quantity;
+            ? (exitPrice - order.entryPrice) * closeQty
+            : (order.entryPrice - exitPrice) * closeQty;
       }
 
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          status: "CLOSED",
-          exitPrice: exitPrice > 0 ? exitPrice : null,
-          profit,
-        },
-      });
+      const isPartial = closeQty < order.quantity;
+
+      if (isPartial) {
+        // Partial close: reduce original order qty, create a new CLOSED record
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { quantity: order.quantity - closeQty },
+        });
+
+        await prisma.order.create({
+          data: {
+            symbol: order.symbol,
+            side: order.side,
+            quantity: closeQty,
+            entryPrice: order.entryPrice,
+            exitPrice: exitPrice > 0 ? exitPrice : null,
+            binanceOrderId: order.binanceOrderId,
+            status: "CLOSED",
+            profit,
+          },
+        });
+      } else {
+        // Full close: mark the order as CLOSED
+        await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: "CLOSED",
+            exitPrice: exitPrice > 0 ? exitPrice : null,
+            profit,
+          },
+        });
+      }
 
       return { symbol: order.symbol, success: true, orderId: order.id };
     }),
