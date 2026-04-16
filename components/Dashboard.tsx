@@ -21,6 +21,7 @@ type OrderRow = {
   quantity: number;
   entryPrice: number | null;
   exitPrice: number | null;
+  profit: number | null;
   binanceOrderId: string | null;
   status: string;
   createdAt: string;

@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { placeMarketOrder, closePosition, isTestnetSymbol } from "./binanceTestnet";
+import { placeMarketOrder, closePosition, isTestnetSymbol, getMarkPrice } from "./binanceTestnet";
 
 export type PlaceOrderInput = {
   symbol: string;
@@ -27,14 +27,23 @@ export async function placeOrders(
       }
 
       const res = await placeMarketOrder(symbol, side, quantity);
-      const avgPrice = parseFloat(res.avgPrice) || null;
+
+      // avgPrice can be "0" for instant fills — fall back to mark price
+      let entryPrice = parseFloat(res.avgPrice) || 0;
+      if (entryPrice === 0) {
+        try {
+          entryPrice = await getMarkPrice(symbol);
+        } catch {
+          entryPrice = 0;
+        }
+      }
 
       const order = await prisma.order.create({
         data: {
           symbol,
           side,
           quantity,
-          entryPrice: avgPrice,
+          entryPrice: entryPrice > 0 ? entryPrice : null,
           binanceOrderId: String(res.orderId),
           status: "OPEN",
         },
@@ -67,11 +76,33 @@ export async function closeOrders(orderIds: string[]): Promise<PlaceResult[]> {
         order.side as "BUY" | "SELL",
         order.quantity,
       );
-      const exitPrice = parseFloat(res.avgPrice) || null;
+
+      // Get exit price, fall back to mark price if avgPrice is 0
+      let exitPrice = parseFloat(res.avgPrice) || 0;
+      if (exitPrice === 0) {
+        try {
+          exitPrice = await getMarkPrice(order.symbol);
+        } catch {
+          exitPrice = 0;
+        }
+      }
+
+      // Calculate profit if we have both prices
+      let profit: number | null = null;
+      if (exitPrice > 0 && order.entryPrice != null && order.entryPrice > 0) {
+        profit =
+          order.side === "BUY"
+            ? (exitPrice - order.entryPrice) * order.quantity
+            : (order.entryPrice - exitPrice) * order.quantity;
+      }
 
       await prisma.order.update({
         where: { id: order.id },
-        data: { status: "CLOSED", exitPrice },
+        data: {
+          status: "CLOSED",
+          exitPrice: exitPrice > 0 ? exitPrice : null,
+          profit,
+        },
       });
 
       return { symbol: order.symbol, success: true, orderId: order.id };

@@ -111,6 +111,23 @@ export type PositionRisk = {
 
 // --- API methods ---
 
+/** Get the current mark price for a symbol.
+ *  Uses the public Binance production API (no auth, geo-unrestricted from Vercel sin1).
+ *  The demo testnet does not expose reliable price data on its premiumIndex endpoint.
+ */
+export async function getMarkPrice(symbol: string): Promise<number> {
+  // Try mark price first
+  const res = await fetch(
+    `https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${encodeURIComponent(symbol)}`,
+    { signal: AbortSignal.timeout(8_000) },
+  );
+  if (!res.ok) throw new Error(`markPrice ${res.status}`);
+  const data = (await res.json()) as { markPrice: string; indexPrice: string };
+  const price = parseFloat(data.markPrice) || parseFloat(data.indexPrice);
+  if (!price || isNaN(price)) throw new Error("markPrice returned zero");
+  return price;
+}
+
 /** Place a MARKET order on the Binance Futures testnet. */
 export async function placeMarketOrder(
   symbol: string,
@@ -132,12 +149,13 @@ export async function closePosition(
   quantity: number,
 ): Promise<OrderResponse> {
   const oppositeSide = side === "BUY" ? "SELL" : "BUY";
+  // No reduceOnly — demo/testnet may not track positions server-side,
+  // causing "ReduceOnly Order is rejected" even for valid close attempts.
   return signedRequest<OrderResponse>("POST", "/fapi/v1/order", {
     symbol,
     side: oppositeSide,
     type: "MARKET",
     quantity,
-    reduceOnly: "true",
   });
 }
 
