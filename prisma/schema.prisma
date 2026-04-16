@@ -19,3 +19,19 @@ model Symbol {
 
   @@index([name])
 }
+
+model Order {
+  id             String   @id @default(uuid())
+  symbol         String
+  side           String   // BUY or SELL
+  quantity       Float
+  entryPrice     Float?
+  exitPrice      Float?
+  binanceOrderId String?
+  status         String   @default("OPEN") // OPEN, CLOSED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+  @@index([symbol])
+}

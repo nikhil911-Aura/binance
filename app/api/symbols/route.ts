@@ -15,10 +15,19 @@ const SymbolSchema = z.object({
     .regex(/^[A-Z0-9]{5,20}$/, "Symbol must be uppercase letters/digits (e.g. BTCUSDT)"),
 });
 
-export async function GET() {
-  // On-demand: refresh any rows older than 30s before returning.
+export async function GET(req: Request) {
   await refreshStaleSymbols();
-  const symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
+  const sort = new URL(req.url).searchParams.get("sort");
+  let symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
+
+  // Sort by absolute funding rate descending (highest magnitude first)
+  if (sort === "fundingRate") {
+    symbols = symbols.sort(
+      (a, b) =>
+        Math.abs(b.fundingRate ?? 0) - Math.abs(a.fundingRate ?? 0),
+    );
+  }
+
   return NextResponse.json(symbols);
 }
 
