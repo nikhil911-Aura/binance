@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { refreshStaleSymbols } from "@/lib/updateFunding";
+import { fetchAllMarkPrices } from "@/lib/binance";
 import SymbolForm from "@/components/SymbolForm";
 import Dashboard from "@/components/Dashboard";
 import StatsCards from "@/components/StatsCards";
@@ -10,11 +11,14 @@ export const revalidate = 0;
 export default async function HomePage() {
   await refreshStaleSymbols();
   const symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
+  const prices = await fetchAllMarkPrices();
   const orders = await prisma.order.findMany({
     where: { status: "OPEN" },
     orderBy: { createdAt: "desc" },
   });
-  const safeSymbols = JSON.parse(JSON.stringify(symbols));
+  const safeSymbols = JSON.parse(
+    JSON.stringify(symbols.map((s) => ({ ...s, markPrice: prices.get(s.name) ?? null }))),
+  );
   const safeOrders = JSON.parse(JSON.stringify(orders));
 
   return (

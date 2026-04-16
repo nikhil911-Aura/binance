@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { fetchPremiumIndex } from "@/lib/binance";
+import { fetchPremiumIndex, fetchAllMarkPrices } from "@/lib/binance";
 import { refreshStaleSymbols } from "@/lib/updateFunding";
 import { invalidateBinanceMetaCache } from "@/lib/binanceMeta";
 
@@ -28,7 +28,14 @@ export async function GET(req: Request) {
     );
   }
 
-  return NextResponse.json(symbols);
+  // Attach live mark prices
+  const prices = await fetchAllMarkPrices();
+  const withPrices = symbols.map((s) => ({
+    ...s,
+    markPrice: prices.get(s.name) ?? null,
+  }));
+
+  return NextResponse.json(withPrices);
 }
 
 export async function POST(req: Request) {

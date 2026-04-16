@@ -12,6 +12,7 @@ type SymbolRow = {
   fundingRate: number | null;
   nextFundingTime: string | null;
   fundingInterval: number | null;
+  markPrice: number | null;
   updatedAt?: string;
 };
 type OrderRow = {

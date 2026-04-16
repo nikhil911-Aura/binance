@@ -19,6 +19,7 @@ type SymbolRow = {
   fundingRate: number | null;
   nextFundingTime: string | null;
   fundingInterval: number | null;
+  markPrice: number | null;
   updatedAt?: string;
 };
 
@@ -32,6 +33,12 @@ function formatRate(rate: number | null): { text: string; color: string } {
   const color =
     pct > 0 ? "text-emerald-400" : pct < 0 ? "text-red-400" : "text-neutral-300";
   return { text: `${pct >= 0 ? "+" : ""}${pct.toFixed(4)}%`, color };
+}
+
+function formatPrice(price: number): string {
+  if (price >= 1000) return `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (price >= 1) return `$${price.toFixed(4)}`;
+  return `$${price.toPrecision(4)}`;
 }
 
 function useNow(intervalMs = 1000) {
@@ -347,6 +354,7 @@ export default function SymbolTable({
                 />
               </th>
               <Th onClick={() => toggleSort("name")} active={sortKey === "name"} dir={sortDir}>Symbol</Th>
+              <th className="px-4 py-3">Price</th>
               <Th onClick={() => toggleSort("fundingRate")} active={sortKey === "fundingRate"} dir={sortDir}>Rate</Th>
               <Th onClick={() => toggleSort("countdown")} active={sortKey === "countdown"} dir={sortDir}>Countdown</Th>
               <th className="px-4 py-3">Interval</th>
@@ -359,6 +367,7 @@ export default function SymbolTable({
               <tr key={`pending-${name}`} className="animate-pulse bg-emerald-950/10">
                 <td className="px-3 py-3"><input type="checkbox" disabled className="accent-emerald-500 opacity-30" /></td>
                 <td className="px-4 py-3 font-mono font-semibold text-emerald-300">{name}</td>
+                <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-4 w-16" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                 <td className="px-4 py-3"><Skeleton className="h-4 w-8" /></td>
@@ -368,7 +377,7 @@ export default function SymbolTable({
             ))}
             {visible.length === 0 && visiblePending.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-sm text-neutral-500">
+                <td colSpan={8} className="px-4 py-6 text-center text-sm text-neutral-500">
                   No symbols match &quot;{filter}&quot;
                 </td>
               </tr>
@@ -392,6 +401,9 @@ export default function SymbolTable({
                     />
                   </td>
                   <td className="px-4 py-3 font-mono font-semibold">{row.name}</td>
+                  <td className="px-4 py-3 font-mono text-neutral-300">
+                    {row.markPrice != null ? formatPrice(row.markPrice) : <Skeleton className="h-4 w-20" />}
+                  </td>
                   <td className={`px-4 py-3 font-mono ${rate.color}`}>
                     {noData ? <Skeleton className="h-4 w-16" /> : rate.text}
                   </td>

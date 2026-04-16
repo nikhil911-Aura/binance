@@ -53,3 +53,24 @@ export async function fetchPremiumIndex(
 export async function isValidSymbol(symbol: string): Promise<boolean> {
   return (await fetchPremiumIndex(symbol, 0)) !== null;
 }
+
+/** Fetch mark prices for all futures symbols in one call. Returns a map of symbol → price. */
+export async function fetchAllMarkPrices(): Promise<Map<string, number>> {
+  const url = `${BINANCE_API_URL}/fapi/v1/premiumIndex`;
+  try {
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return new Map();
+    const data = (await res.json()) as Array<{ symbol: string; markPrice: string }>;
+    const map = new Map<string, number>();
+    for (const item of data) {
+      const price = parseFloat(item.markPrice);
+      if (price > 0) map.set(item.symbol, price);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
