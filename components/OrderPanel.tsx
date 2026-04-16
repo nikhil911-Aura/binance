@@ -19,7 +19,7 @@ type OrderRow = {
 };
 
 type Tab = "open" | "history" | "profit";
-type CloseTarget = { id: string; symbol: string; side: string; quantity: number };
+type CloseTarget = { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
 
 /** Returns the closing action side — opposite of the stored position side. */
 function closingSide(side: string) {
@@ -242,7 +242,7 @@ export default function OrderPanel({
                         </td>
                         <td className="px-3 py-2 text-right">
                           <button
-                            onClick={() => setCloseTarget({ id: order.id, symbol: order.symbol, side: order.side, quantity: order.quantity })}
+                            onClick={() => setCloseTarget({ id: order.id, symbol: order.symbol, side: order.side, quantity: order.quantity, entryPrice: order.entryPrice })}
                             disabled={isClosingRow || closing}
                             className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
                           >
@@ -382,7 +382,7 @@ function CloseQuantityModal({
   onConfirm,
   onCancel,
 }: {
-  target: { id: string; symbol: string; side: string; quantity: number };
+  target: { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
   onConfirm: (id: string, quantity: number) => void;
   onCancel: () => void;
 }) {
@@ -402,6 +402,11 @@ function CloseQuantityModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
+  const price = target.entryPrice ?? 0;
+  const qtyVal = parseFloat(qty) || 0;
+  const notional = qtyVal * price;
+  const notionalOk = notional >= 5;
+
   function handleConfirm() {
     const val = parseFloat(qty);
     if (isNaN(val) || val <= 0) {
@@ -412,8 +417,21 @@ function CloseQuantityModal({
       setError(`Max quantity is ${target.quantity}`);
       return;
     }
+    if (price > 0 && val * price < 5) {
+      setError(`Notional too low: $${(val * price).toFixed(2)} (min $5)`);
+      return;
+    }
     onConfirm(target.id, val);
   }
+
+  // Calculate minimum quantity needed to meet $5 notional
+  const minQtyRaw = price > 0 ? 5 / price : 0;
+  // Show up to 4 decimal places, round up at the last displayed digit
+  const minQty = price > 0
+    ? minQtyRaw >= 1
+      ? Math.ceil(minQtyRaw)
+      : Math.ceil(minQtyRaw * 10000) / 10000
+    : 0;
 
   const isShort = target.side === "SELL";
 
@@ -428,6 +446,9 @@ function CloseQuantityModal({
             {target.side}
           </span>{" "}
           on <span className="font-mono text-neutral-200">{target.symbol}</span>
+          {price > 0 && (
+            <span className="ml-1 text-neutral-500">@ ${price < 1 ? price.toPrecision(4) : price.toFixed(2)}</span>
+          )}
         </p>
 
         <div className="mt-4">
@@ -447,6 +468,32 @@ function CloseQuantityModal({
             onKeyDown={(e) => { if (e.key === "Enter") handleConfirm(); }}
             className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-red-500 placeholder:text-neutral-600"
           />
+
+          {/* Live value + notional check */}
+          {price > 0 && (
+            <div className="mt-2 rounded border border-neutral-800 bg-neutral-950/50 px-3 py-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-500">Price</span>
+                <span className="font-mono text-neutral-300">${price < 1 ? price.toPrecision(4) : price.toFixed(2)}</span>
+              </div>
+              <div className="mt-1 flex justify-between">
+                <span className="text-neutral-500">Qty</span>
+                <span className="font-mono text-neutral-300">{qtyVal || "—"}</span>
+              </div>
+              <div className="mt-1 flex justify-between border-t border-neutral-800 pt-1">
+                <span className="text-neutral-500">Value</span>
+                <span className={`font-mono font-medium ${qtyVal > 0 ? (notionalOk ? "text-emerald-400" : "text-red-400") : "text-neutral-500"}`}>
+                  {qtyVal > 0 ? `$${notional.toFixed(2)}` : "—"}
+                  {qtyVal > 0 && !notionalOk && <span className="ml-1 text-red-400">(min $5)</span>}
+                </span>
+              </div>
+              <div className="mt-1 flex justify-between">
+                <span className="text-neutral-500">Min qty for $5</span>
+                <span className="font-mono text-amber-400">{minQty}</span>
+              </div>
+            </div>
+          )}
+
           {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         </div>
 
