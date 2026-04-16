@@ -78,6 +78,7 @@ export default function SymbolTable({
   const [orderModal, setOrderModal] = useState<{ side: "BUY" | "SELL" } | null>(null);
   const [placing, setPlacing] = useState(false);
   const [filter, setFilter] = useState("");
+  const [rateFilter, setRateFilter] = useState<"all" | "positive" | "negative">("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [, startTransition] = useTransition();
@@ -211,6 +212,8 @@ export default function SymbolTable({
   const visible = useMemo(() => {
     const f = filter.trim().toUpperCase();
     let out = f ? rows.filter((r) => r.name.includes(f)) : rows.slice();
+    if (rateFilter === "positive") out = out.filter((r) => (r.fundingRate ?? 0) > 0);
+    else if (rateFilter === "negative") out = out.filter((r) => (r.fundingRate ?? 0) < 0);
     out.sort((a, b) => {
       let av: number | string, bv: number | string;
       if (sortKey === "name") { av = a.name; bv = b.name; }
@@ -221,7 +224,7 @@ export default function SymbolTable({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return out;
-  }, [rows, filter, sortKey, sortDir]);
+  }, [rows, filter, rateFilter, sortKey, sortDir]);
 
   if (rows.length === 0 && visiblePending.length === 0) {
     return (
@@ -273,6 +276,26 @@ export default function SymbolTable({
             placeholder="Filter…"
             className="w-28 rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-xs outline-none focus:border-emerald-500"
           />
+          <div className="flex rounded border border-neutral-700 text-xs">
+            <button
+              onClick={() => setRateFilter("all")}
+              className={`px-2 py-1 ${rateFilter === "all" ? "bg-neutral-700 text-white" : "text-neutral-400 hover:text-neutral-200"}`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setRateFilter("positive")}
+              className={`border-l border-neutral-700 px-2 py-1 ${rateFilter === "positive" ? "bg-emerald-900/50 text-emerald-400" : "text-neutral-400 hover:text-emerald-300"}`}
+            >
+              +ve
+            </button>
+            <button
+              onClick={() => setRateFilter("negative")}
+              className={`border-l border-neutral-700 px-2 py-1 ${rateFilter === "negative" ? "bg-red-900/50 text-red-400" : "text-neutral-400 hover:text-red-300"}`}
+            >
+              -ve
+            </button>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           {selected.size > 0 && (
