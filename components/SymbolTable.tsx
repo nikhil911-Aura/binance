@@ -75,7 +75,7 @@ export default function SymbolTable({
   onPlaceOrders,
 }: {
   initial: SymbolRow[];
-  onPlaceOrders?: (symbols: string[], side: "BUY" | "SELL", qty: number) => Promise<OrderResult[] | null>;
+  onPlaceOrders?: (symbols: string[], side: "BUY" | "SELL", qty: number, price?: number) => Promise<OrderResult[] | null>;
 }) {
   const [rows, setRows] = useState<SymbolRow[]>(initial);
   const [pendingNames, setPendingNames] = useState<string[]>([]);
@@ -198,11 +198,11 @@ export default function SymbolTable({
     else setSelected(new Set(rows.map((r) => r.name)));
   }
 
-  async function handlePlaceOrder(qty: number): Promise<OrderResult[] | null> {
+  async function handlePlaceOrder(qty: number, price?: number): Promise<OrderResult[] | null> {
     if (!onPlaceOrders || selected.size === 0 || !orderModal) return null;
     setPlacing(true);
     try {
-      const results = await onPlaceOrders(Array.from(selected), orderModal.side, qty);
+      const results = await onPlaceOrders(Array.from(selected), orderModal.side, qty, price);
       const allSucceeded = results?.every((r) => r.success) ?? false;
       if (allSucceeded) {
         setSelected(new Set());

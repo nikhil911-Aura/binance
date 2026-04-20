@@ -142,6 +142,23 @@ export async function placeMarketOrder(
   });
 }
 
+/** Place a LIMIT order (GTC) on the Binance Futures testnet. */
+export async function placeLimitOrder(
+  symbol: string,
+  side: "BUY" | "SELL",
+  quantity: number,
+  price: number,
+): Promise<OrderResponse> {
+  return signedRequest<OrderResponse>("POST", "/fapi/v1/order", {
+    symbol,
+    side,
+    type: "LIMIT",
+    quantity,
+    price,
+    timeInForce: "GTC",
+  });
+}
+
 /** Close a position by placing the opposite market order. */
 export async function closePosition(
   symbol: string,
@@ -162,4 +179,26 @@ export async function closePosition(
 /** Fetch all current position risk from testnet. */
 export async function getPositionRisk(): Promise<PositionRisk[]> {
   return signedRequest<PositionRisk[]>("GET", "/fapi/v2/positionRisk", {});
+}
+
+/** Get the status of a specific order by orderId. */
+export async function getOrderStatus(
+  symbol: string,
+  orderId: string,
+): Promise<{ status: string; avgPrice: string; executedQty: string }> {
+  return signedRequest("GET", "/fapi/v1/order", {
+    symbol,
+    orderId: parseInt(orderId, 10),
+  });
+}
+
+/** Cancel a limit order on the testnet. */
+export async function cancelLimitOrder(
+  symbol: string,
+  orderId: string,
+): Promise<void> {
+  await signedRequest("DELETE", "/fapi/v1/order", {
+    symbol,
+    orderId: parseInt(orderId, 10),
+  });
 }

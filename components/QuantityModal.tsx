@@ -24,10 +24,12 @@ export default function QuantityModal({
   side: "BUY" | "SELL";
   symbolCount: number;
   symbols: SymbolWithPrice[];
-  onConfirm: (qty: number) => Promise<OrderResult[] | null>;
+  onConfirm: (qty: number, price?: number) => Promise<OrderResult[] | null>;
   onCancel: () => void;
 }) {
   const [qty, setQty] = useState("0.1");
+  const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [limitPrice, setLimitPrice] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<OrderResult[]>([]);
@@ -44,6 +46,8 @@ export default function QuantityModal({
       setSubmitting(false);
       setScheduleOn(false);
       setDelayMs(0);
+      setOrderType("MARKET");
+      setLimitPrice("");
     }
   }, [open]);
 
@@ -64,6 +68,14 @@ export default function QuantityModal({
       setError("Enter a valid positive quantity");
       return;
     }
+    let priceVal: number | undefined;
+    if (orderType === "LIMIT") {
+      priceVal = parseFloat(limitPrice);
+      if (isNaN(priceVal) || priceVal <= 0) {
+        setError("Enter a valid limit price");
+        return;
+      }
+    }
     setError("");
     setResults([]);
 
@@ -73,13 +85,14 @@ export default function QuantityModal({
       const nameStr = names.length <= 3
         ? names.join(", ")
         : `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
-      const label = `${side} ${nameStr} @ qty ${val}`;
+      const typeLabel = orderType === "LIMIT" ? ` @ $${priceVal}` : "";
+      const label = `${side} ${nameStr} × ${val}${typeLabel}`;
       const persist: PersistPayload = {
         type: side,
-        params: { symbols: symbols.map((s) => s.name), side, quantity: val },
+        params: { symbols: symbols.map((s) => s.name), side, quantity: val, ...(priceVal != null && { price: priceVal }) },
       };
       schedule(label, delayMs, async () => {
-        const res = await onConfirm(val);
+        const res = await onConfirm(val, priceVal);
         const fails = res?.filter((r) => !r.success).length ?? 0;
         if (fails > 0) toast("error", `Scheduled ${side}: ${fails} failed`);
       }, persist);
@@ -90,7 +103,7 @@ export default function QuantityModal({
 
     setSubmitting(true);
     try {
-      const res = await onConfirm(val);
+      const res = await onConfirm(val, priceVal);
       if (res) {
         const failures = res.filter((r) => !r.success);
         if (failures.length > 0) {
@@ -114,12 +127,27 @@ export default function QuantityModal({
         <h3 className="text-base font-semibold text-neutral-100">
           {side} {symbolCount} Symbol{symbolCount !== 1 ? "s" : ""}
         </h3>
-        <p className="mt-1 text-sm text-neutral-400">
-          Enter the quantity for each market order.
-        </p>
+
+        {/* Order type toggle */}
+        <div className="mt-3 flex rounded-md border border-neutral-700 text-xs font-medium overflow-hidden w-fit">
+          <button
+            onClick={() => { setOrderType("MARKET"); setLimitPrice(""); setError(""); }}
+            disabled={submitting}
+            className={`px-4 py-1.5 transition-colors ${orderType === "MARKET" ? `${palette.bg} text-white` : "text-neutral-400 hover:text-neutral-200 bg-neutral-800"}`}
+          >
+            Market
+          </button>
+          <button
+            onClick={() => { setOrderType("LIMIT"); setError(""); }}
+            disabled={submitting}
+            className={`px-4 py-1.5 transition-colors border-l border-neutral-700 ${orderType === "LIMIT" ? `${palette.bg} text-white` : "text-neutral-400 hover:text-neutral-200 bg-neutral-800"}`}
+          >
+            Limit
+          </button>
+        </div>
 
         {/* Quantity input */}
-        <div className="mt-4">
+        <div className="mt-3">
           <label className="text-xs uppercase text-neutral-500">Quantity per symbol</label>
           <input
             type="number"
@@ -132,7 +160,35 @@ export default function QuantityModal({
             className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-emerald-500 disabled:opacity-50"
             onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
           />
-          <p className="mt-1 text-xs text-neutral-500">
+          {orderType === "LIMIT" && (
+            <div className="mt-3">
+              <label className="text-xs uppercase text-neutral-500">Limit price per symbol</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={limitPrice}
+                onChange={(e) => { setLimitPrice(e.target.value); setError(""); }}
+                disabled={submitting}
+                placeholder="e.g. 80.00"
+                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-amber-500 disabled:opacity-50 placeholder:text-neutral-600"
+                onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+              />
+              <p className="mt-1 text-xs text-neutral-500">
+                Order will sit on the exchange until price reaches this level (GTC).
+              </p>
+              {/* Per-symbol current price reference */}
+              <div className="mt-2 space-y-1">
+                {symbols.map((s) => s.price != null && (
+                  <div key={s.name} className="flex items-center justify-between rounded border border-neutral-800 bg-neutral-950/60 px-2 py-1 text-xs">
+                    <span className="font-mono text-neutral-400">{s.name} market price</span>
+                    <span className="font-mono text-sky-400">{formatPrice(s.price)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <p className="mt-2 text-xs text-neutral-500">
             Min notional: <span className="text-amber-400">$5</span> per order (price x qty must exceed $5)
           </p>
           {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
@@ -237,7 +293,11 @@ export default function QuantityModal({
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${palette.bg} ${palette.hover}`}
           >
             {submitting && <Spinner className="h-4 w-4" />}
-            {submitting ? "Placing…" : scheduleOn && delayMs > 0 ? `Schedule ${side} Order` : `Place ${side} Order`}
+            {submitting
+              ? "Placing…"
+              : scheduleOn && delayMs > 0
+              ? `Schedule ${orderType === "LIMIT" ? "Limit" : ""} ${side}`
+              : `Place ${orderType} ${side}`}
           </button>
         </div>
       </div>

@@ -18,7 +18,7 @@ type OrderRow = {
   updatedAt: string;
 };
 
-type Tab = "open" | "scheduled" | "history" | "profit";
+type Tab = "open" | "pending" | "scheduled" | "history" | "profit";
 type CloseTarget = { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
 
 /** Returns the closing action side — opposite of the stored position side. */
@@ -43,6 +43,8 @@ export default function OrderPanel({
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
   const [bulkCloseIds, setBulkCloseIds] = useState<string[] | null>(null);
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null);
+  const [pendingOrders, setPendingOrders] = useState<OrderRow[]>([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
   const { schedule, tasks: scheduledTasks, cancel: cancelScheduled, loading: schedulerLoading } = useScheduler();
@@ -82,7 +84,31 @@ export default function OrderPanel({
     if ((tab === "history" || tab === "profit") && !closedLoaded) {
       fetchClosedOrders(false);
     }
+    if (tab === "pending") syncPending(false);
   }, [tab]);
+
+  async function syncPending(showSpinner = false) {
+    if (showSpinner) setPendingLoading(true);
+    try {
+      const res = await fetch("/api/orders/sync-pending", { method: "POST" });
+      if (!res.ok) return;
+      const data = await res.json() as { filled: number; orders: OrderRow[] };
+      setPendingOrders(data.orders);
+      if (data.filled > 0) {
+        toast("success", `${data.filled} limit order${data.filled !== 1 ? "s" : ""} filled!`);
+        await fetchOpenOrders(false);
+      }
+    } catch { /* skip */ }
+    finally { if (showSpinner) setPendingLoading(false); }
+  }
+
+  // Poll pending orders every 5s when there are any
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (pendingOrders.length > 0 || tab === "pending") syncPending(false);
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [pendingOrders.length, tab]);
 
   function toggleSelect(id: string) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -146,6 +172,20 @@ export default function OrderPanel({
     finally { setClosing(false); setClosingIds(new Set()); }
   }
 
+  async function handleCancelLimit(id: string) {
+    try {
+      const res = await fetch("/api/orders/cancel-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error ?? "Failed to cancel"); return; }
+      setPendingOrders((p) => p.filter((o) => o.id !== id));
+      toast("success", "Limit order cancelled");
+    } catch { toast("error", "Network error"); }
+  }
+
   function handleBulkClose() {
     const ids = openOrders.filter((o) => selected.has(o.id)).map((o) => o.id);
     if (ids.length > 0) setBulkCloseIds(ids);
@@ -159,6 +199,7 @@ export default function OrderPanel({
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "open", label: "Positions", count: openOrders.length },
+    { key: "pending", label: "Limit Orders", count: pendingOrders.length || undefined },
     { key: "scheduled", label: "Scheduled", count: scheduledTasks.length || undefined },
     { key: "history", label: "History", count: closedLoaded ? closedOrders.length : undefined },
     { key: "profit", label: "Profit / Loss", count: closedLoaded ? profitBySymbol.length : undefined },
@@ -216,11 +257,15 @@ export default function OrderPanel({
               )}
               {tab !== "scheduled" && (
                 <button
-                  onClick={() => tab === "open" ? fetchOpenOrders(true) : fetchClosedOrders(true)}
-                  disabled={refreshing}
+                  onClick={() => {
+                    if (tab === "open") fetchOpenOrders(true);
+                    else if (tab === "pending") syncPending(true);
+                    else fetchClosedOrders(true);
+                  }}
+                  disabled={refreshing || pendingLoading}
                   className="flex items-center gap-1 rounded border border-neutral-700 px-3 py-1 text-xs hover:bg-neutral-800 disabled:opacity-50"
                 >
-                  {refreshing && <Spinner className="h-3 w-3" />}
+                  {(refreshing || pendingLoading) && <Spinner className="h-3 w-3" />}
                   Refresh
                 </button>
               )}
@@ -272,6 +317,75 @@ export default function OrderPanel({
                             className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
                           >
                             {isClosingRow ? "Closing…" : "Partial Close"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
+        )}
+
+        {/* ── LIMIT ORDERS TAB ── */}
+        {tab === "pending" && (
+          pendingLoading ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-900 text-left text-xs uppercase text-neutral-400">
+                  <tr>
+                    <th className="px-3 py-2">Symbol</th>
+                    <th className="px-3 py-2">Side</th>
+                    <th className="px-3 py-2">Qty</th>
+                    <th className="px-3 py-2">Limit Price</th>
+                    <th className="px-3 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800">
+                  {[1, 2, 3].map((i) => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="px-3 py-2"><div className="h-4 w-24 rounded bg-neutral-700/60" /></td>
+                      <td className="px-3 py-2"><div className="h-4 w-10 rounded bg-neutral-700/60" /></td>
+                      <td className="px-3 py-2"><div className="h-4 w-8 rounded bg-neutral-700/60" /></td>
+                      <td className="px-3 py-2"><div className="h-4 w-20 rounded bg-neutral-700/60" /></td>
+                      <td className="px-3 py-2 text-right"><div className="ml-auto h-4 w-12 rounded bg-neutral-700/60" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : pendingOrders.length === 0 ? (
+            <EmptyState icon="⏳" title="No pending limit orders" sub="Place a limit order using the Limit toggle in the Buy / Sell modal." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-900 text-left text-xs uppercase text-neutral-400">
+                  <tr>
+                    <th className="px-3 py-2">Symbol</th>
+                    <th className="px-3 py-2">Side</th>
+                    <th className="px-3 py-2">Qty</th>
+                    <th className="px-3 py-2">Limit Price</th>
+                    <th className="px-3 py-2 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-800">
+                  {pendingOrders.map((order) => {
+                    const isBuy = order.side === "BUY";
+                    return (
+                      <tr key={order.id} className="hover:bg-neutral-900/50">
+                        <td className="px-3 py-2 font-mono font-semibold text-neutral-200">{order.symbol}</td>
+                        <td className={`px-3 py-2 font-mono text-xs font-bold ${isBuy ? "text-emerald-400" : "text-red-400"}`}>{order.side}</td>
+                        <td className="px-3 py-2 font-mono text-neutral-300">{order.quantity}</td>
+                        <td className="px-3 py-2 font-mono text-amber-400">
+                          {order.entryPrice != null ? `$${order.entryPrice.toFixed(4)}` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <button
+                            onClick={() => handleCancelLimit(order.id)}
+                            className="text-xs text-red-400 hover:text-red-300"
+                          >
+                            Cancel
                           </button>
                         </td>
                       </tr>

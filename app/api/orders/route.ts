@@ -9,6 +9,7 @@ const PlaceSchema = z.object({
   symbols: z.array(z.string().trim().toUpperCase()).min(1, "Select at least one symbol"),
   side: z.enum(["BUY", "SELL"]),
   quantity: z.number().positive("Quantity must be positive"),
+  price: z.number().positive("Limit price must be positive").optional(),
 });
 
 // GET — return all orders (default: OPEN only, ?status=all for everything)
@@ -39,8 +40,8 @@ export async function POST(req: Request) {
     );
   }
 
-  const { symbols, side, quantity } = parsed.data;
-  const inputs = symbols.map((symbol) => ({ symbol, side, quantity }));
+  const { symbols, side, quantity, price } = parsed.data;
+  const inputs = symbols.map((symbol) => ({ symbol, side, quantity, price }));
 
   try {
     const results = await placeOrders(inputs);

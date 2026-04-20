@@ -45,12 +45,13 @@ export default function Dashboard({
     symbols: string[],
     side: "BUY" | "SELL",
     quantity: number,
+    price?: number,
   ): Promise<OrderResult[] | null> {
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbols, side, quantity }),
+        body: JSON.stringify({ symbols, side, quantity, ...(price != null && { price }) }),
       });
       const data = await res.json();
       if (!res.ok) {
