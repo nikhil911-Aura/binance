@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
     params: Record<string, unknown>;
   };
   const task = await prisma.scheduledOrder.create({
-    data: { id, label, executeAt: new Date(executeAt), type, params },
+    data: { id, label, executeAt: new Date(executeAt), type, params: params as Prisma.InputJsonValue },
   });
   return NextResponse.json(task);
 }

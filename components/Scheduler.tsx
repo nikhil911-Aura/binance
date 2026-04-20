@@ -15,6 +15,7 @@ export type PersistPayload = {
 
 type SchedulerContextType = {
   tasks: ScheduledTask[];
+  loading: boolean;
   schedule: (
     label: string,
     delayMs: number,
@@ -59,6 +60,7 @@ function buildCallback(type: string, params: Record<string, unknown>): () => Pro
 
 export function SchedulerProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [loading, setLoading] = useState(true);
   const [timeouts] = useState(() => new Map<string, ReturnType<typeof setTimeout>>());
 
   // Recover persisted tasks on mount
@@ -102,7 +104,8 @@ export function SchedulerProvider({ children }: { children: ReactNode }) {
           }
         },
       )
-      .catch((e) => console.error("[scheduler] failed to recover tasks:", e));
+      .catch((e) => console.error("[scheduler] failed to recover tasks:", e))
+      .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -158,7 +161,7 @@ export function SchedulerProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <SchedulerContext.Provider value={{ tasks, schedule, cancel }}>
+    <SchedulerContext.Provider value={{ tasks, loading, schedule, cancel }}>
       {children}
     </SchedulerContext.Provider>
   );
@@ -171,7 +174,7 @@ export function useScheduler() {
 }
 
 export function ScheduledTasksPanel() {
-  const { tasks, cancel } = useScheduler();
+  const { tasks, loading, cancel } = useScheduler();
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -180,7 +183,7 @@ export function ScheduledTasksPanel() {
     return () => clearInterval(id);
   }, [tasks.length]);
 
-  if (tasks.length === 0) return null;
+  if (loading || tasks.length === 0) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-40 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-amber-800/50 bg-neutral-900 shadow-2xl ring-1 ring-amber-500/20">

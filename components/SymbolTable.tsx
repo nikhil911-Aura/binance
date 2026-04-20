@@ -42,8 +42,9 @@ function formatPrice(price: number): string {
 }
 
 function useNow(intervalMs = 1000) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(0);
   useEffect(() => {
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), intervalMs);
     return () => clearInterval(id);
   }, [intervalMs]);
@@ -61,7 +62,7 @@ function formatCountdown(target: string | null, now: number): string {
 }
 
 function timeAgo(iso: string | undefined, now: number): string {
-  if (!iso) return "—";
+  if (!iso || now === 0) return "—";
   const sec = Math.max(0, Math.floor((now - new Date(iso).getTime()) / 1000));
   if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);
@@ -393,7 +394,7 @@ export default function SymbolTable({
               return (
                 <tr
                   key={row.id}
-                  className={`hover:bg-neutral-900/50 ${isDeleting ? "opacity-40" : ""} ${checked ? "bg-emerald-950/10" : ""}`}
+                  className={`hover:bg-neutral-900/50 ${isDeleting || (placing && checked) ? "opacity-40" : ""} ${checked ? "bg-emerald-950/10" : ""}`}
                 >
                   <td className="px-3 py-3">
                     <input
