@@ -37,3 +37,14 @@ model Order {
   @@index([status])
   @@index([symbol])
 }
+
+model ScheduledOrder {
+  id        String   @id
+  label     String
+  executeAt DateTime
+  type      String   // BUY | SELL | CLOSE_SINGLE | CLOSE_ALL
+  params    Json
+  createdAt DateTime @default(now())
+
+  @@index([executeAt])
+}

@@ -8,25 +8,125 @@ type ScheduledTask = {
   executeAt: number;
 };
 
+export type PersistPayload = {
+  type: "BUY" | "SELL" | "CLOSE_SINGLE" | "CLOSE_ALL";
+  params: Record<string, unknown>;
+};
+
 type SchedulerContextType = {
   tasks: ScheduledTask[];
-  schedule: (label: string, delayMs: number, callback: () => void | Promise<void>) => string;
+  schedule: (
+    label: string,
+    delayMs: number,
+    callback: () => void | Promise<void>,
+    persist?: PersistPayload,
+  ) => string;
   cancel: (id: string) => void;
 };
 
 const SchedulerContext = createContext<SchedulerContextType | null>(null);
 
+function buildCallback(type: string, params: Record<string, unknown>): () => Promise<void> {
+  if (type === "BUY" || type === "SELL") {
+    const { symbols, side, quantity } = params as { symbols: string[]; side: string; quantity: number };
+    return () =>
+      fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbols, side, quantity }),
+      }).then(() => {});
+  }
+  if (type === "CLOSE_SINGLE") {
+    const { orderId, quantity } = params as { orderId: string; quantity: number };
+    return () =>
+      fetch("/api/orders/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: [{ id: orderId, quantity }] }),
+      }).then(() => {});
+  }
+  if (type === "CLOSE_ALL") {
+    const { orderIds } = params as { orderIds: string[] };
+    return () =>
+      fetch("/api/orders/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orders: (orderIds as string[]).map((id) => ({ id })) }),
+      }).then(() => {});
+  }
+  return async () => {};
+}
+
 export function SchedulerProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [timeouts] = useState(() => new Map<string, ReturnType<typeof setTimeout>>());
 
+  // Recover persisted tasks on mount
+  useEffect(() => {
+    fetch("/api/scheduled")
+      .then((r) => r.json())
+      .then(
+        (
+          dbTasks: Array<{
+            id: string;
+            label: string;
+            executeAt: string;
+            type: string;
+            params: Record<string, unknown>;
+          }>,
+        ) => {
+          if (!Array.isArray(dbTasks) || dbTasks.length === 0) return;
+          const now = Date.now();
+          for (const task of dbTasks) {
+            const executeAt = new Date(task.executeAt).getTime();
+            const remaining = Math.max(0, executeAt - now);
+            const id = task.id;
+            const callback = buildCallback(task.type, task.params);
+
+            const timeoutId = setTimeout(async () => {
+              timeouts.delete(id);
+              setTasks((t) => t.filter((x) => x.id !== id));
+              try {
+                await callback();
+              } catch (e) {
+                console.error("[scheduler] recovered task failed:", e);
+              }
+              fetch(`/api/scheduled/${id}`, { method: "DELETE" }).catch(() => {});
+            }, remaining);
+
+            timeouts.set(id, timeoutId);
+            setTasks((t) => {
+              if (t.some((x) => x.id === id)) return t;
+              return [...t, { id, label: task.label, executeAt }];
+            });
+          }
+        },
+      )
+      .catch((e) => console.error("[scheduler] failed to recover tasks:", e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const schedule = useCallback(
-    (label: string, delayMs: number, callback: () => void | Promise<void>) => {
+    (
+      label: string,
+      delayMs: number,
+      callback: () => void | Promise<void>,
+      persist?: PersistPayload,
+    ): string => {
       const id =
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
           : Math.random().toString(36).slice(2);
       const executeAt = Date.now() + delayMs;
+
+      if (persist) {
+        fetch("/api/scheduled", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, label, executeAt, type: persist.type, params: persist.params }),
+        }).catch((e) => console.error("[scheduler] failed to persist task:", e));
+      }
+
       const timeoutId = setTimeout(async () => {
         timeouts.delete(id);
         setTasks((t) => t.filter((task) => task.id !== id));
@@ -34,6 +134,9 @@ export function SchedulerProvider({ children }: { children: ReactNode }) {
           await callback();
         } catch (e) {
           console.error("[scheduler] task failed:", e);
+        }
+        if (persist) {
+          fetch(`/api/scheduled/${id}`, { method: "DELETE" }).catch(() => {});
         }
       }, delayMs);
       timeouts.set(id, timeoutId);
@@ -49,6 +152,7 @@ export function SchedulerProvider({ children }: { children: ReactNode }) {
       if (timeoutId) clearTimeout(timeoutId);
       timeouts.delete(id);
       setTasks((t) => t.filter((x) => x.id !== id));
+      fetch(`/api/scheduled/${id}`, { method: "DELETE" }).catch(() => {});
     },
     [timeouts],
   );

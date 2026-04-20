@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "./Toast";
-import { useScheduler, TimerInput } from "./Scheduler";
+import { useScheduler, TimerInput, type PersistPayload } from "./Scheduler";
 
 type OrderRow = {
   id: string;
@@ -97,8 +97,9 @@ export default function OrderPanel({
     setCloseTarget(null);
     if (delayMs > 0 && target) {
       const label = `Close ${quantity} ${target.symbol}`;
-      schedule(label, delayMs, () => performClose([{ id, quantity }]));
-      toast("success", `Scheduled: ${label} in ${Math.round(delayMs / 1000)}s`);
+      const persist: PersistPayload = { type: "CLOSE_SINGLE", params: { orderId: id, quantity } };
+      schedule(label, delayMs, () => performClose([{ id, quantity }]), persist);
+      toast("success", `Scheduled: ${label} in ${formatDelay(delayMs)}`);
       return;
     }
     await performClose([{ id, quantity }]);
@@ -108,8 +109,9 @@ export default function OrderPanel({
     setBulkCloseIds(null);
     if (delayMs > 0) {
       const label = `Close ${ids.length} position${ids.length !== 1 ? "s" : ""}`;
-      schedule(label, delayMs, () => performClose(ids.map((id) => ({ id }))));
-      toast("success", `Scheduled: ${label} in ${Math.round(delayMs / 1000)}s`);
+      const persist: PersistPayload = { type: "CLOSE_ALL", params: { orderIds: ids } };
+      schedule(label, delayMs, () => performClose(ids.map((id) => ({ id }))), persist);
+      toast("success", `Scheduled: ${label} in ${formatDelay(delayMs)}`);
       return;
     }
     performClose(ids.map((id) => ({ id })));
@@ -623,6 +625,14 @@ function buildProfitBySymbol(orders: OrderRow[]): SymbolProfit[] {
     map.set(o.symbol, existing);
   }
   return [...map.values()].sort((a, b) => b.totalProfit - a.totalProfit);
+}
+
+function formatDelay(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+  const ss = String(totalSec % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
 }
 
 function EmptyState({ icon, title, sub }: { icon: string; title: string; sub: string }) {

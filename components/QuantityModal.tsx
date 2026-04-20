@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useScheduler, TimerInput } from "./Scheduler";
+import { useScheduler, TimerInput, type PersistPayload } from "./Scheduler";
 import { useToast } from "./Toast";
 
 export type OrderResult = {
@@ -69,14 +69,17 @@ export default function QuantityModal({
 
     // Scheduled execution
     if (scheduleOn && delayMs > 0) {
-      const sec = Math.round(delayMs / 1000);
       const label = `${side} ${symbolCount} symbol${symbolCount !== 1 ? "s" : ""} @ qty ${val}`;
+      const persist: PersistPayload = {
+        type: side,
+        params: { symbols: symbols.map((s) => s.name), side, quantity: val },
+      };
       schedule(label, delayMs, async () => {
         const res = await onConfirm(val);
         const fails = res?.filter((r) => !r.success).length ?? 0;
         if (fails > 0) toast("error", `Scheduled ${side}: ${fails} failed`);
-      });
-      toast("success", `Scheduled: ${label} in ${sec}s`);
+      }, persist);
+      toast("success", `Scheduled: ${label} in ${formatDelay(delayMs)}`);
       onCancel();
       return;
     }
@@ -236,6 +239,14 @@ export default function QuantityModal({
       </div>
     </div>
   );
+}
+
+function formatDelay(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+  const ss = String(totalSec % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
 }
 
 function formatPrice(price: number): string {
