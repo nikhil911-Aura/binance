@@ -10,6 +10,7 @@ const CloseSchema = z.object({
       z.object({
         id: z.string().uuid(),
         quantity: z.number().positive().optional(),
+        price: z.number().positive().optional(),
       }),
     )
     .min(1, "Select at least one order"),

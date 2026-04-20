@@ -13,6 +13,8 @@ type OrderRow = {
   exitPrice: number | null;
   profit: number | null;
   binanceOrderId: string | null;
+  pendingCloseOrderId: string | null;
+  pendingClosePrice: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -44,6 +46,7 @@ export default function OrderPanel({
   const [bulkCloseIds, setBulkCloseIds] = useState<string[] | null>(null);
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null);
   const [pendingOrders, setPendingOrders] = useState<OrderRow[]>([]);
+  const [pendingCloseOrders, setPendingCloseOrders] = useState<OrderRow[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
@@ -92,8 +95,9 @@ export default function OrderPanel({
     try {
       const res = await fetch("/api/orders/sync-pending", { method: "POST" });
       if (!res.ok) return;
-      const data = await res.json() as { filled: number; orders: OrderRow[] };
+      const data = await res.json() as { filled: number; orders: OrderRow[]; pendingCloses: OrderRow[] };
       setPendingOrders(data.orders);
+      setPendingCloseOrders(data.pendingCloses ?? []);
       if (data.filled > 0) {
         toast("success", `${data.filled} limit order${data.filled !== 1 ? "s" : ""} filled!`);
         await fetchOpenOrders(false);
@@ -105,10 +109,10 @@ export default function OrderPanel({
   // Poll pending orders every 5s when there are any
   useEffect(() => {
     const id = setInterval(() => {
-      if (pendingOrders.length > 0 || tab === "pending") syncPending(false);
+      if (pendingOrders.length > 0 || pendingCloseOrders.length > 0 || tab === "pending") syncPending(false);
     }, 5_000);
     return () => clearInterval(id);
-  }, [pendingOrders.length, tab]);
+  }, [pendingOrders.length, pendingCloseOrders.length, tab]);
 
   function toggleSelect(id: string) {
     setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -118,17 +122,17 @@ export default function OrderPanel({
     else setSelected(new Set(openOrders.map((o) => o.id)));
   }
 
-  async function performCloseSingle(id: string, quantity: number, delayMs: number) {
+  async function performCloseSingle(id: string, quantity: number, delayMs: number, price?: number) {
     const target = closeTarget;
     setCloseTarget(null);
     if (delayMs > 0 && target) {
-      const label = `Close ${quantity} ${target.symbol}`;
-      const persist: PersistPayload = { type: "CLOSE_SINGLE", params: { orderId: id, quantity } };
-      schedule(label, delayMs, () => performClose([{ id, quantity }]), persist);
+      const label = `Close ${quantity} ${target.symbol}${price != null ? ` @ $${price}` : ""}`;
+      const persist: PersistPayload = { type: "CLOSE_SINGLE", params: { orderId: id, quantity, ...(price != null && { price }) } };
+      schedule(label, delayMs, () => performClose([{ id, quantity, price }]), persist);
       toast("success", `Scheduled: ${label} in ${formatDelay(delayMs)}`);
       return;
     }
-    await performClose([{ id, quantity }]);
+    await performClose([{ id, quantity, price }]);
   }
 
   function performBulkClose(ids: string[], delayMs: number) {
@@ -147,7 +151,7 @@ export default function OrderPanel({
     performClose(ids.map((id) => ({ id })));
   }
 
-  async function performClose(orders: { id: string; quantity?: number }[]) {
+  async function performClose(orders: { id: string; quantity?: number; price?: number }[]) {
     setClosing(true);
     setClosingIds(new Set(orders.map((o) => o.id)));
     try {
@@ -199,7 +203,7 @@ export default function OrderPanel({
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "open", label: "Positions", count: openOrders.length },
-    { key: "pending", label: "Limit Orders", count: pendingOrders.length || undefined },
+    { key: "pending", label: "Limit Orders", count: (pendingOrders.length + pendingCloseOrders.length) || undefined },
     { key: "scheduled", label: "Scheduled", count: scheduledTasks.length || undefined },
     { key: "history", label: "History", count: closedLoaded ? closedOrders.length : undefined },
     { key: "profit", label: "Profit / Loss", count: closedLoaded ? profitBySymbol.length : undefined },
@@ -311,13 +315,17 @@ export default function OrderPanel({
                           {order.entryPrice != null ? `$${order.entryPrice.toFixed(4)}` : "—"}
                         </td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            onClick={() => setCloseTarget({ id: order.id, symbol: order.symbol, side: order.side, quantity: order.quantity, entryPrice: order.entryPrice })}
-                            disabled={isClosingRow || closing}
-                            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
-                          >
-                            {isClosingRow ? "Closing…" : "Partial Close"}
-                          </button>
+                          {order.pendingCloseOrderId ? (
+                            <span className="text-xs text-amber-400 animate-pulse">Limit Close Pending…</span>
+                          ) : (
+                            <button
+                              onClick={() => setCloseTarget({ id: order.id, symbol: order.symbol, side: order.side, quantity: order.quantity, entryPrice: order.entryPrice })}
+                              disabled={isClosingRow || closing}
+                              className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                            >
+                              {isClosingRow ? "Closing…" : "Partial Close"}
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -355,14 +363,15 @@ export default function OrderPanel({
                 </tbody>
               </table>
             </div>
-          ) : pendingOrders.length === 0 ? (
-            <EmptyState icon="⏳" title="No pending limit orders" sub="Place a limit order using the Limit toggle in the Buy / Sell modal." />
+          ) : pendingOrders.length === 0 && pendingCloseOrders.length === 0 ? (
+            <EmptyState icon="⏳" title="No pending limit orders" sub="Place a limit order using the Limit toggle in the Buy / Sell or Close modal." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-900 text-left text-xs uppercase text-neutral-400">
                   <tr>
                     <th className="px-3 py-2">Symbol</th>
+                    <th className="px-3 py-2">Type</th>
                     <th className="px-3 py-2">Side</th>
                     <th className="px-3 py-2">Qty</th>
                     <th className="px-3 py-2">Limit Price</th>
@@ -370,24 +379,32 @@ export default function OrderPanel({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-800">
-                  {pendingOrders.map((order) => {
-                    const isBuy = order.side === "BUY";
+                  {pendingOrders.map((order) => (
+                    <tr key={order.id} className="hover:bg-neutral-900/50">
+                      <td className="px-3 py-2 font-mono font-semibold text-neutral-200">{order.symbol}</td>
+                      <td className="px-3 py-2 text-xs text-emerald-400 font-medium">Open</td>
+                      <td className={`px-3 py-2 font-mono text-xs font-bold ${order.side === "BUY" ? "text-emerald-400" : "text-red-400"}`}>{order.side}</td>
+                      <td className="px-3 py-2 font-mono text-neutral-300">{order.quantity}</td>
+                      <td className="px-3 py-2 font-mono text-amber-400">
+                        {order.entryPrice != null ? `$${order.entryPrice.toFixed(4)}` : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => handleCancelLimit(order.id)} className="text-xs text-red-400 hover:text-red-300">Cancel</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {pendingCloseOrders.map((order) => {
+                    const closeSide = order.side === "BUY" ? "SELL" : "BUY";
                     return (
                       <tr key={order.id} className="hover:bg-neutral-900/50">
                         <td className="px-3 py-2 font-mono font-semibold text-neutral-200">{order.symbol}</td>
-                        <td className={`px-3 py-2 font-mono text-xs font-bold ${isBuy ? "text-emerald-400" : "text-red-400"}`}>{order.side}</td>
+                        <td className="px-3 py-2 text-xs text-amber-400 font-medium">Close</td>
+                        <td className={`px-3 py-2 font-mono text-xs font-bold ${closeSide === "BUY" ? "text-emerald-400" : "text-red-400"}`}>{closeSide}</td>
                         <td className="px-3 py-2 font-mono text-neutral-300">{order.quantity}</td>
                         <td className="px-3 py-2 font-mono text-amber-400">
-                          {order.entryPrice != null ? `$${order.entryPrice.toFixed(4)}` : "—"}
+                          {order.pendingClosePrice != null ? `$${order.pendingClosePrice.toFixed(4)}` : "—"}
                         </td>
-                        <td className="px-3 py-2 text-right">
-                          <button
-                            onClick={() => handleCancelLimit(order.id)}
-                            className="text-xs text-red-400 hover:text-red-300"
-                          >
-                            Cancel
-                          </button>
-                        </td>
+                        <td className="px-3 py-2 text-right text-xs text-neutral-500">Waiting fill</td>
                       </tr>
                     );
                   })}
@@ -535,16 +552,20 @@ function CloseQuantityModal({
   onCancel,
 }: {
   target: { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
-  onConfirm: (id: string, quantity: number, delayMs: number) => void;
+  onConfirm: (id: string, quantity: number, delayMs: number, price?: number) => void;
   onCancel: () => void;
 }) {
   const [qty, setQty] = useState("");
+  const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
+  const [limitPrice, setLimitPrice] = useState("");
   const [error, setError] = useState("");
   const [scheduleOn, setScheduleOn] = useState(false);
   const [delayMs, setDelayMs] = useState(0);
 
   useEffect(() => {
     setQty("");
+    setOrderType("MARKET");
+    setLimitPrice("");
     setError("");
     setScheduleOn(false);
     setDelayMs(0);
@@ -558,7 +579,20 @@ function CloseQuantityModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  const price = target.entryPrice ?? 0;
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLivePrice(null);
+    fetch("/api/symbols", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((syms: Array<{ name: string; markPrice: number | null }>) => {
+        const found = syms.find((s) => s.name === target.symbol);
+        if (found?.markPrice) setLivePrice(found.markPrice);
+      })
+      .catch(() => {});
+  }, [target.symbol]);
+
+  const price = livePrice ?? target.entryPrice ?? 0;
   const qtyVal = parseFloat(qty) || 0;
   const notional = qtyVal * price;
   const notionalOk = notional >= 5;
@@ -577,7 +611,15 @@ function CloseQuantityModal({
       setError(`Notional too low: $${(val * price).toFixed(2)} (min $5)`);
       return;
     }
-    onConfirm(target.id, val, scheduleOn ? delayMs : 0);
+    let priceVal: number | undefined;
+    if (orderType === "LIMIT") {
+      priceVal = parseFloat(limitPrice);
+      if (isNaN(priceVal) || priceVal <= 0) {
+        setError("Enter a valid limit price");
+        return;
+      }
+    }
+    onConfirm(target.id, val, scheduleOn ? delayMs : 0, priceVal);
   }
 
   // Calculate minimum quantity needed to meet $5 notional
@@ -607,7 +649,23 @@ function CloseQuantityModal({
           )}
         </p>
 
-        <div className="mt-4">
+        {/* Order type toggle */}
+        <div className="mt-3 flex rounded-md border border-neutral-700 text-xs font-medium overflow-hidden w-fit">
+          <button
+            onClick={() => { setOrderType("MARKET"); setLimitPrice(""); setError(""); }}
+            className={`px-4 py-1.5 transition-colors ${orderType === "MARKET" ? "bg-red-600 text-white" : "text-neutral-400 hover:text-neutral-200 bg-neutral-800"}`}
+          >
+            Market
+          </button>
+          <button
+            onClick={() => { setOrderType("LIMIT"); setError(""); }}
+            className={`px-4 py-1.5 transition-colors border-l border-neutral-700 ${orderType === "LIMIT" ? "bg-red-600 text-white" : "text-neutral-400 hover:text-neutral-200 bg-neutral-800"}`}
+          >
+            Limit
+          </button>
+        </div>
+
+        <div className="mt-3">
           <label className="text-xs uppercase text-neutral-500">
             Quantity to close{" "}
             <span className="text-neutral-600">(max {target.quantity})</span>
@@ -625,12 +683,55 @@ function CloseQuantityModal({
             className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-red-500 placeholder:text-neutral-600"
           />
 
+          {/* Limit price input */}
+          {orderType === "LIMIT" && (
+            <div className="mt-3">
+              <label className="text-xs uppercase text-neutral-500">Limit price</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                value={limitPrice}
+                onChange={(e) => { setLimitPrice(e.target.value); setError(""); }}
+                placeholder="e.g. 75000.00"
+                onKeyDown={(e) => { if (e.key === "Enter") handleConfirm(); }}
+                className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-amber-500 placeholder:text-neutral-600"
+              />
+              {livePrice != null && (
+                <div className="mt-1 flex items-center justify-between text-xs">
+                  <span className="text-neutral-500">Live market price</span>
+                  <span className="font-mono text-sky-400">${livePrice < 1 ? livePrice.toPrecision(4) : livePrice.toFixed(2)}</span>
+                </div>
+              )}
+              {target.entryPrice != null && (
+                <div className="mt-1 flex items-center justify-between text-xs">
+                  <span className="text-neutral-500">Your entry price</span>
+                  <span className="font-mono text-neutral-400">${target.entryPrice < 1 ? target.entryPrice.toPrecision(4) : target.entryPrice.toFixed(2)}</span>
+                </div>
+              )}
+              <p className="mt-1 text-xs text-neutral-500">Close order will sit on exchange until price reaches this level (GTC).</p>
+            </div>
+          )}
+
           {/* Live value + notional check */}
           {price > 0 && (
             <div className="mt-2 rounded border border-neutral-800 bg-neutral-950/50 px-3 py-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-neutral-500">Price</span>
-                <span className="font-mono text-neutral-300">${price < 1 ? price.toPrecision(4) : price.toFixed(2)}</span>
+              {target.entryPrice != null && (
+                <div className="flex justify-between">
+                  <span className="text-neutral-500">Entry price</span>
+                  <span className="font-mono text-neutral-400">
+                    ${target.entryPrice < 1 ? target.entryPrice.toPrecision(4) : target.entryPrice.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              <div className={`flex justify-between ${target.entryPrice != null ? "mt-1" : ""}`}>
+                <span className="text-neutral-500">
+                  Live price
+                  {livePrice == null && <span className="ml-1 text-neutral-600">(loading…)</span>}
+                </span>
+                <span className={`font-mono ${livePrice != null ? "text-sky-400" : "text-neutral-500"}`}>
+                  {livePrice != null ? `$${livePrice < 1 ? livePrice.toPrecision(4) : livePrice.toFixed(2)}` : "—"}
+                </span>
               </div>
               <div className="mt-1 flex justify-between">
                 <span className="text-neutral-500">Qty</span>
@@ -671,7 +772,9 @@ function CloseQuantityModal({
             onClick={handleConfirm}
             className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
           >
-            {scheduleOn && delayMs > 0 ? "Schedule Close" : "Close Position"}
+            {scheduleOn && delayMs > 0
+              ? `Schedule ${orderType === "LIMIT" ? "Limit " : ""}Close`
+              : `${orderType === "LIMIT" ? "Place Limit Close" : "Close Position"}`}
           </button>
         </div>
       </div>

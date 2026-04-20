@@ -73,10 +73,11 @@ export async function placeOrders(
  *  Each input may specify a custom quantity; falls back to the stored quantity.
  */
 export async function closeOrders(
-  inputs: { id: string; quantity?: number }[],
+  inputs: { id: string; quantity?: number; price?: number }[],
 ): Promise<PlaceResult[]> {
   const ids = inputs.map((i) => i.id);
   const qtyOverride = new Map(inputs.map((i) => [i.id, i.quantity]));
+  const priceOverride = new Map(inputs.map((i) => [i.id, i.price]));
 
   const orders = await prisma.order.findMany({
     where: { id: { in: ids }, status: "OPEN" },
@@ -87,14 +88,46 @@ export async function closeOrders(
   const results = await Promise.allSettled(
     orders.map(async (order): Promise<PlaceResult> => {
       const closeQty = qtyOverride.get(order.id) ?? order.quantity;
+      const closePrice = priceOverride.get(order.id);
 
       const res = await closePosition(
         order.symbol,
         order.side as "BUY" | "SELL",
         closeQty,
+        closePrice,
       );
 
-      // Get exit price, fall back to mark price if avgPrice is 0
+      const isPartial = closeQty < order.quantity;
+
+      // Limit close — order is pending on exchange, don't mark CLOSED yet
+      if (closePrice != null) {
+        if (isPartial) {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { quantity: order.quantity - closeQty },
+          });
+          await prisma.order.create({
+            data: {
+              symbol: order.symbol,
+              side: order.side,
+              quantity: closeQty,
+              entryPrice: order.entryPrice,
+              binanceOrderId: order.binanceOrderId,
+              pendingCloseOrderId: String(res.orderId),
+              pendingClosePrice: closePrice,
+              status: "OPEN",
+            },
+          });
+        } else {
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { pendingCloseOrderId: String(res.orderId), pendingClosePrice: closePrice },
+          });
+        }
+        return { symbol: order.symbol, success: true, orderId: order.id };
+      }
+
+      // Market close — fills immediately, mark CLOSED now
       let exitPrice = parseFloat(res.avgPrice) || 0;
       if (exitPrice === 0) {
         try {
@@ -104,7 +137,6 @@ export async function closeOrders(
         }
       }
 
-      // Calculate profit using the actual close quantity
       let profit: number | null = null;
       if (exitPrice > 0 && order.entryPrice != null && order.entryPrice > 0) {
         profit =
@@ -113,15 +145,11 @@ export async function closeOrders(
             : (order.entryPrice - exitPrice) * closeQty;
       }
 
-      const isPartial = closeQty < order.quantity;
-
       if (isPartial) {
-        // Partial close: reduce original order qty, create a new CLOSED record
         await prisma.order.update({
           where: { id: order.id },
           data: { quantity: order.quantity - closeQty },
         });
-
         await prisma.order.create({
           data: {
             symbol: order.symbol,
@@ -135,7 +163,6 @@ export async function closeOrders(
           },
         });
       } else {
-        // Full close: mark the order as CLOSED
         await prisma.order.update({
           where: { id: order.id },
           data: {
@@ -158,12 +185,12 @@ export async function closeOrders(
   });
 }
 
-/** Check all PENDING limit orders against Binance and promote filled ones to OPEN. */
+/** Check all PENDING limit orders + pending limit closes against Binance. */
 export async function syncPendingOrders() {
-  const pending = await prisma.order.findMany({ where: { status: "PENDING" } });
-  if (pending.length === 0) return { filled: 0 };
-
   let filled = 0;
+
+  // 1. Pending limit buy/sell orders (status = PENDING)
+  const pending = await prisma.order.findMany({ where: { status: "PENDING" } });
   await Promise.allSettled(
     pending.map(async (order) => {
       if (!order.binanceOrderId) return;
@@ -181,6 +208,41 @@ export async function syncPendingOrders() {
         }
       } catch (e) {
         console.error(`[sync-pending] ${order.symbol}:`, e);
+      }
+    }),
+  );
+
+  // 2. Pending limit close orders (status = OPEN but pendingCloseOrderId set)
+  const pendingCloses = await prisma.order.findMany({
+    where: { status: "OPEN", pendingCloseOrderId: { not: null } },
+  });
+  await Promise.allSettled(
+    pendingCloses.map(async (order) => {
+      if (!order.pendingCloseOrderId) return;
+      try {
+        const info = await getOrderStatus(order.symbol, order.pendingCloseOrderId);
+        if (info.status === "FILLED") {
+          const exitPrice = parseFloat(info.avgPrice) || 0;
+          let profit: number | null = null;
+          if (exitPrice > 0 && order.entryPrice != null && order.entryPrice > 0) {
+            profit = order.side === "BUY"
+              ? (exitPrice - order.entryPrice) * order.quantity
+              : (order.entryPrice - exitPrice) * order.quantity;
+          }
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { status: "CLOSED", exitPrice, profit, pendingCloseOrderId: null },
+          });
+          filled++;
+        } else if (info.status === "CANCELED" || info.status === "EXPIRED") {
+          // Close order cancelled — restore position to normal open
+          await prisma.order.update({
+            where: { id: order.id },
+            data: { pendingCloseOrderId: null },
+          });
+        }
+      } catch (e) {
+        console.error(`[sync-pending-close] ${order.symbol}:`, e);
       }
     }),
   );

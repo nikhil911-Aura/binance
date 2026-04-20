@@ -159,15 +159,24 @@ export async function placeLimitOrder(
   });
 }
 
-/** Close a position by placing the opposite market order. */
+/** Close a position by placing the opposite market or limit order. */
 export async function closePosition(
   symbol: string,
   side: "BUY" | "SELL",
   quantity: number,
+  price?: number,
 ): Promise<OrderResponse> {
   const oppositeSide = side === "BUY" ? "SELL" : "BUY";
-  // No reduceOnly — demo/testnet may not track positions server-side,
-  // causing "ReduceOnly Order is rejected" even for valid close attempts.
+  if (price != null) {
+    return signedRequest<OrderResponse>("POST", "/fapi/v1/order", {
+      symbol,
+      side: oppositeSide,
+      type: "LIMIT",
+      quantity,
+      price,
+      timeInForce: "GTC",
+    });
+  }
   return signedRequest<OrderResponse>("POST", "/fapi/v1/order", {
     symbol,
     side: oppositeSide,
