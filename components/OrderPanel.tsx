@@ -108,7 +108,11 @@ export default function OrderPanel({
   function performBulkClose(ids: string[], delayMs: number) {
     setBulkCloseIds(null);
     if (delayMs > 0) {
-      const label = `Close ${ids.length} position${ids.length !== 1 ? "s" : ""}`;
+      const names = ids.map((id) => openOrders.find((o) => o.id === id)?.symbol ?? id);
+      const nameStr = names.length <= 3
+        ? names.join(", ")
+        : `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
+      const label = `Close ${nameStr}`;
       const persist: PersistPayload = { type: "CLOSE_ALL", params: { orderIds: ids } };
       schedule(label, delayMs, () => performClose(ids.map((id) => ({ id }))), persist);
       toast("success", `Scheduled: ${label} in ${formatDelay(delayMs)}`);

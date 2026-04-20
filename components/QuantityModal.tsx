@@ -69,7 +69,11 @@ export default function QuantityModal({
 
     // Scheduled execution
     if (scheduleOn && delayMs > 0) {
-      const label = `${side} ${symbolCount} symbol${symbolCount !== 1 ? "s" : ""} @ qty ${val}`;
+      const names = symbols.map((s) => s.name);
+      const nameStr = names.length <= 3
+        ? names.join(", ")
+        : `${names.slice(0, 2).join(", ")} +${names.length - 2} more`;
+      const label = `${side} ${nameStr} @ qty ${val}`;
       const persist: PersistPayload = {
         type: side,
         params: { symbols: symbols.map((s) => s.name), side, quantity: val },
