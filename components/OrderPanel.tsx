@@ -18,7 +18,7 @@ type OrderRow = {
   updatedAt: string;
 };
 
-type Tab = "open" | "history" | "profit";
+type Tab = "open" | "scheduled" | "history" | "profit";
 type CloseTarget = { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
 
 /** Returns the closing action side — opposite of the stored position side. */
@@ -45,7 +45,7 @@ export default function OrderPanel({
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
-  const { schedule } = useScheduler();
+  const { schedule, tasks: scheduledTasks, cancel: cancelScheduled, loading: schedulerLoading } = useScheduler();
 
   // Keep a stable ref so interval callback always sees latest orders
   const openOrdersRef = useRef(openOrders);
@@ -159,6 +159,7 @@ export default function OrderPanel({
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
     { key: "open", label: "Positions", count: openOrders.length },
+    { key: "scheduled", label: "Scheduled", count: scheduledTasks.length || undefined },
     { key: "history", label: "History", count: closedLoaded ? closedOrders.length : undefined },
     { key: "profit", label: "Profit / Loss", count: closedLoaded ? profitBySymbol.length : undefined },
   ];
@@ -213,14 +214,16 @@ export default function OrderPanel({
                   Close All ({selected.size})
                 </button>
               )}
-              <button
-                onClick={() => tab === "open" ? fetchOpenOrders(true) : fetchClosedOrders(true)}
-                disabled={refreshing}
-                className="flex items-center gap-1 rounded border border-neutral-700 px-3 py-1 text-xs hover:bg-neutral-800 disabled:opacity-50"
-              >
-                {refreshing && <Spinner className="h-3 w-3" />}
-                Refresh
-              </button>
+              {tab !== "scheduled" && (
+                <button
+                  onClick={() => tab === "open" ? fetchOpenOrders(true) : fetchClosedOrders(true)}
+                  disabled={refreshing}
+                  className="flex items-center gap-1 rounded border border-neutral-700 px-3 py-1 text-xs hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  {refreshing && <Spinner className="h-3 w-3" />}
+                  Refresh
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -277,6 +280,19 @@ export default function OrderPanel({
                 </tbody>
               </table>
             </div>
+          )
+        )}
+
+        {/* ── SCHEDULED TAB ── */}
+        {tab === "scheduled" && (
+          schedulerLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-neutral-400">
+              <Spinner className="h-4 w-4" /> Loading…
+            </div>
+          ) : scheduledTasks.length === 0 ? (
+            <EmptyState icon="⏱" title="No scheduled orders" sub="Use the timer in Buy / Sell / Close modals to schedule orders." />
+          ) : (
+            <ScheduledTab tasks={scheduledTasks} onCancel={cancelScheduled} />
           )
         )}
 
@@ -637,6 +653,59 @@ function formatDelay(ms: number): string {
   const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
   const ss = String(totalSec % 60).padStart(2, "0");
   return `${hh}:${mm}:${ss}`;
+}
+
+function ScheduledTab({
+  tasks,
+  onCancel,
+}: {
+  tasks: { id: string; label: string; executeAt: number }[];
+  onCancel: (id: string) => void;
+}) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead className="bg-neutral-900 text-left text-xs uppercase text-neutral-400">
+          <tr>
+            <th className="px-3 py-2">Order</th>
+            <th className="px-3 py-2 text-center">Executes In</th>
+            <th className="px-3 py-2 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-neutral-800">
+          {tasks.map((task) => {
+            const remaining = Math.max(0, task.executeAt - now);
+            const totalSec = Math.ceil(remaining / 1000);
+            const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+            const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+            const ss = String(totalSec % 60).padStart(2, "0");
+            return (
+              <tr key={task.id} className="hover:bg-neutral-900/50">
+                <td className="px-3 py-2 font-medium text-neutral-200">{task.label}</td>
+                <td className="px-3 py-2 text-center font-mono text-amber-400">
+                  {`${hh}:${mm}:${ss}`}
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <button
+                    onClick={() => onCancel(task.id)}
+                    className="text-xs text-red-400 hover:text-red-300"
+                  >
+                    Cancel
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function EmptyState({ icon, title, sub }: { icon: string; title: string; sub: string }) {
