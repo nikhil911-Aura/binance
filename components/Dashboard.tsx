@@ -25,6 +25,8 @@ type OrderRow = {
   exitPrice: number | null;
   profit: number | null;
   binanceOrderId: string | null;
+  pendingCloseOrderId: string | null;
+  pendingClosePrice: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
