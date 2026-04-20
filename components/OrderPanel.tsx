@@ -49,6 +49,7 @@ export default function OrderPanel({
   const [pendingCloseOrders, setPendingCloseOrders] = useState<OrderRow[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingLoaded, setPendingLoaded] = useState(false);
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
   const { schedule, tasks: scheduledTasks, cancel: cancelScheduled, loading: schedulerLoading } = useScheduler();
@@ -179,6 +180,7 @@ export default function OrderPanel({
   }
 
   async function handleCancelLimit(id: string) {
+    setCancellingIds((s) => new Set(s).add(id));
     try {
       const res = await fetch("/api/orders/cancel-limit", {
         method: "POST",
@@ -190,6 +192,24 @@ export default function OrderPanel({
       setPendingOrders((p) => p.filter((o) => o.id !== id));
       toast("success", "Limit order cancelled");
     } catch { toast("error", "Network error"); }
+    finally { setCancellingIds((s) => { const n = new Set(s); n.delete(id); return n; }); }
+  }
+
+  async function handleCancelLimitClose(id: string) {
+    setCancellingIds((s) => new Set(s).add(id));
+    try {
+      const res = await fetch("/api/orders/cancel-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, type: "close" }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error ?? "Failed to cancel"); return; }
+      setPendingCloseOrders((p) => p.filter((o) => o.id !== id));
+      setOpenOrders((prev) => prev.map((o) => o.id === id ? { ...o, pendingCloseOrderId: null, pendingClosePrice: null } : o));
+      toast("success", "Limit close cancelled");
+    } catch { toast("error", "Network error"); }
+    finally { setCancellingIds((s) => { const n = new Set(s); n.delete(id); return n; }); }
   }
 
   function handleBulkClose() {
@@ -391,7 +411,7 @@ export default function OrderPanel({
                         {order.entryPrice != null ? `$${order.entryPrice.toFixed(4)}` : "—"}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <button onClick={() => handleCancelLimit(order.id)} className="text-xs text-red-400 hover:text-red-300">Cancel</button>
+                        <button onClick={() => handleCancelLimit(order.id)} disabled={cancellingIds.has(order.id)} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed">{cancellingIds.has(order.id) ? "Cancelling…" : "Cancel"}</button>
                       </td>
                     </tr>
                   ))}
@@ -406,7 +426,9 @@ export default function OrderPanel({
                         <td className="px-3 py-2 font-mono text-amber-400">
                           {order.pendingClosePrice != null ? `$${order.pendingClosePrice.toFixed(4)}` : "—"}
                         </td>
-                        <td className="px-3 py-2 text-right text-xs text-neutral-500">Waiting fill</td>
+                        <td className="px-3 py-2 text-right">
+                          <button onClick={() => handleCancelLimitClose(order.id)} disabled={cancellingIds.has(order.id)} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed">{cancellingIds.has(order.id) ? "Cancelling…" : "Cancel"}</button>
+                        </td>
                       </tr>
                     );
                   })}

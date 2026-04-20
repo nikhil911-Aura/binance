@@ -259,3 +259,14 @@ export async function cancelPendingOrder(id: string) {
   }
   await prisma.order.delete({ where: { id } });
 }
+
+/** Cancel a pending limit close on Binance and clear the pendingCloseOrderId on the OPEN order. */
+export async function cancelPendingClose(id: string) {
+  const order = await prisma.order.findUnique({ where: { id } });
+  if (!order || !order.pendingCloseOrderId) throw new Error("No pending close found for this order");
+  await cancelLimitOrder(order.symbol, order.pendingCloseOrderId);
+  await prisma.order.update({
+    where: { id },
+    data: { pendingCloseOrderId: null, pendingClosePrice: null },
+  });
+}
