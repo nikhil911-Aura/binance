@@ -40,6 +40,12 @@ model Order {
   @@index([symbol])
 }
 
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model ScheduledOrder {
   id        String   @id
   label     String

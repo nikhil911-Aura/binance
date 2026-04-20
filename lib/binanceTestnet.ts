@@ -1,22 +1,18 @@
 import crypto from "crypto";
+import { getSettings } from "./settings";
 
-const TESTNET_URL =
-  process.env.BINANCE_TESTNET_URL ?? "https://testnet.binancefuture.com";
-const API_KEY = process.env.BINANCE_TESTNET_API_KEY ?? "";
-const API_SECRET = process.env.BINANCE_TESTNET_API_SECRET ?? "";
-
-function sign(queryString: string): string {
+function sign(queryString: string, secret: string): string {
   return crypto
-    .createHmac("sha256", API_SECRET)
+    .createHmac("sha256", secret)
     .update(queryString)
     .digest("hex");
 }
 
-function buildSignedParams(params: Record<string, string | number>): string {
+function buildSignedParams(params: Record<string, string | number>, secret: string): string {
   const qs = new URLSearchParams(
     Object.entries(params).map(([k, v]) => [k, String(v)]),
   ).toString();
-  const signature = sign(qs);
+  const signature = sign(qs, secret);
   return `${qs}&signature=${signature}`;
 }
 
@@ -25,18 +21,20 @@ async function signedRequest<T>(
   path: string,
   params: Record<string, string | number>,
 ): Promise<T> {
+  const { binanceUrl, binanceApiKey, binanceApiSecret } = await getSettings();
+
   params.timestamp = Date.now();
   params.recvWindow = 5000;
-  const body = buildSignedParams(params);
+  const body = buildSignedParams(params, binanceApiSecret);
   const url =
     method === "GET"
-      ? `${TESTNET_URL}${path}?${body}`
-      : `${TESTNET_URL}${path}`;
+      ? `${binanceUrl}${path}?${body}`
+      : `${binanceUrl}${path}`;
 
   const res = await fetch(url, {
     method,
     headers: {
-      "X-MBX-APIKEY": API_KEY,
+      "X-MBX-APIKEY": binanceApiKey,
       ...(method !== "GET" && {
         "Content-Type": "application/x-www-form-urlencoded",
       }),
@@ -66,7 +64,8 @@ export async function loadTestnetSymbols(): Promise<Set<string>> {
   if (testnetSymbolsCache && Date.now() - testnetSymbolsCache.at < CACHE_TTL) {
     return testnetSymbolsCache.symbols;
   }
-  const res = await fetch(`${TESTNET_URL}/fapi/v1/exchangeInfo`, {
+  const { binanceUrl } = await getSettings();
+  const res = await fetch(`${binanceUrl}/fapi/v1/exchangeInfo`, {
     signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`testnet exchangeInfo ${res.status}`);

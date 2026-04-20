@@ -48,6 +48,7 @@ export default function OrderPanel({
   const [pendingOrders, setPendingOrders] = useState<OrderRow[]>([]);
   const [pendingCloseOrders, setPendingCloseOrders] = useState<OrderRow[]>([]);
   const [pendingLoading, setPendingLoading] = useState(false);
+  const [pendingLoaded, setPendingLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
   const { schedule, tasks: scheduledTasks, cancel: cancelScheduled, loading: schedulerLoading } = useScheduler();
@@ -87,7 +88,7 @@ export default function OrderPanel({
     if ((tab === "history" || tab === "profit") && !closedLoaded) {
       fetchClosedOrders(false);
     }
-    if (tab === "pending") syncPending(false);
+    if (tab === "pending") syncPending(!pendingLoaded);
   }, [tab]);
 
   async function syncPending(showSpinner = false) {
@@ -98,6 +99,7 @@ export default function OrderPanel({
       const data = await res.json() as { filled: number; orders: OrderRow[]; pendingCloses: OrderRow[] };
       setPendingOrders(data.orders);
       setPendingCloseOrders(data.pendingCloses ?? []);
+      setPendingLoaded(true);
       if (data.filled > 0) {
         toast("success", `${data.filled} limit order${data.filled !== 1 ? "s" : ""} filled!`);
         await fetchOpenOrders(false);
