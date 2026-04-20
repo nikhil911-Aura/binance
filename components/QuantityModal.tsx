@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useScheduler, TimerInput } from "./Scheduler";
+import { useToast } from "./Toast";
 
 export type OrderResult = {
   symbol: string;
   success: boolean;
   error?: string;
 };
+
+export type SymbolWithPrice = { name: string; price: number | null };
 
 export default function QuantityModal({
   open,
@@ -19,7 +23,7 @@ export default function QuantityModal({
   open: boolean;
   side: "BUY" | "SELL";
   symbolCount: number;
-  symbols: string[];
+  symbols: SymbolWithPrice[];
   onConfirm: (qty: number) => Promise<OrderResult[] | null>;
   onCancel: () => void;
 }) {
@@ -27,6 +31,10 @@ export default function QuantityModal({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<OrderResult[]>([]);
+  const [scheduleOn, setScheduleOn] = useState(false);
+  const [delayMs, setDelayMs] = useState(0);
+  const { schedule } = useScheduler();
+  const { toast } = useToast();
 
   // Reset state when modal opens/closes
   useEffect(() => {
@@ -34,6 +42,8 @@ export default function QuantityModal({
       setError("");
       setResults([]);
       setSubmitting(false);
+      setScheduleOn(false);
+      setDelayMs(0);
     }
   }, [open]);
 
@@ -56,6 +66,21 @@ export default function QuantityModal({
     }
     setError("");
     setResults([]);
+
+    // Scheduled execution
+    if (scheduleOn && delayMs > 0) {
+      const sec = Math.round(delayMs / 1000);
+      const label = `${side} ${symbolCount} symbol${symbolCount !== 1 ? "s" : ""} @ qty ${val}`;
+      schedule(label, delayMs, async () => {
+        const res = await onConfirm(val);
+        const fails = res?.filter((r) => !r.success).length ?? 0;
+        if (fails > 0) toast("error", `Scheduled ${side}: ${fails} failed`);
+      });
+      toast("success", `Scheduled: ${label} in ${sec}s`);
+      onCancel();
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await onConfirm(val);
@@ -64,7 +89,6 @@ export default function QuantityModal({
         if (failures.length > 0) {
           setResults(failures);
         }
-        // If all succeeded, parent closes the modal
       }
     } finally {
       setSubmitting(false);
@@ -87,15 +111,6 @@ export default function QuantityModal({
           Enter the quantity for each market order.
         </p>
 
-        {/* Symbol list */}
-        <div className="mt-3 flex flex-wrap gap-1">
-          {symbols.map((s) => (
-            <span key={s} className="rounded bg-neutral-800 px-2 py-0.5 font-mono text-xs text-neutral-300">
-              {s}
-            </span>
-          ))}
-        </div>
-
         {/* Quantity input */}
         <div className="mt-4">
           <label className="text-xs uppercase text-neutral-500">Quantity per symbol</label>
@@ -115,6 +130,59 @@ export default function QuantityModal({
           </p>
           {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         </div>
+
+        {/* Per-symbol value breakdown */}
+        <div className="mt-3 max-h-48 overflow-y-auto rounded-md border border-neutral-800 bg-neutral-950/40">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-neutral-900 text-neutral-500">
+              <tr>
+                <th className="px-2 py-1.5 text-left font-medium">Symbol</th>
+                <th className="px-2 py-1.5 text-right font-medium">Price</th>
+                <th className="px-2 py-1.5 text-right font-medium">Value</th>
+                <th className="px-2 py-1.5 text-center font-medium w-8"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-800">
+              {symbols.map((s) => {
+                const qtyNum = parseFloat(qty) || 0;
+                const value = s.price != null ? qtyNum * s.price : null;
+                const ok = value != null && value >= 5;
+                const hasQty = qtyNum > 0;
+                return (
+                  <tr key={s.name}>
+                    <td className="px-2 py-1.5 font-mono font-semibold text-neutral-200">{s.name}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-neutral-400">
+                      {s.price != null ? formatPrice(s.price) : "—"}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right font-mono ${!hasQty ? "text-neutral-500" : ok ? "text-emerald-400" : "text-red-400"}`}>
+                      {value != null && hasQty ? `$${value.toFixed(2)}` : "—"}
+                    </td>
+                    <td className="px-2 py-1.5 text-center">
+                      {hasQty && value != null && (
+                        <span className={ok ? "text-emerald-400" : "text-red-400"}>
+                          {ok ? "✓" : "✗"}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Warning if any would fail */}
+        {(() => {
+          const qtyNum = parseFloat(qty) || 0;
+          if (qtyNum <= 0) return null;
+          const failing = symbols.filter((s) => s.price != null && qtyNum * s.price < 5);
+          if (failing.length === 0) return null;
+          return (
+            <p className="mt-2 text-xs text-red-400">
+              {failing.length} symbol{failing.length !== 1 ? "s" : ""} below $5 minimum — those orders will fail
+            </p>
+          );
+        })()}
 
         {/* Error results from failed orders */}
         {results.length > 0 && (
@@ -141,6 +209,13 @@ export default function QuantityModal({
           </div>
         )}
 
+        <TimerInput
+          enabled={scheduleOn}
+          setEnabled={setScheduleOn}
+          delayMs={delayMs}
+          setDelayMs={setDelayMs}
+        />
+
         <div className="mt-6 flex justify-end gap-2">
           <button
             onClick={onCancel}
@@ -155,12 +230,18 @@ export default function QuantityModal({
             className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${palette.bg} ${palette.hover}`}
           >
             {submitting && <Spinner className="h-4 w-4" />}
-            {submitting ? "Placing…" : `Place ${side} Order`}
+            {submitting ? "Placing…" : scheduleOn && delayMs > 0 ? `Schedule ${side} Order` : `Place ${side} Order`}
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function formatPrice(price: number): string {
+  if (price >= 1000) return `$${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (price >= 1) return `$${price.toFixed(4)}`;
+  return `$${price.toPrecision(4)}`;
 }
 
 /** Strip Binance prefix from error messages for cleaner display. */

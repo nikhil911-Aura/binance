@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "./Toast";
-import ConfirmDialog from "./ConfirmDialog";
+import { useScheduler, TimerInput } from "./Scheduler";
 
 type OrderRow = {
   id: string;
@@ -41,10 +41,11 @@ export default function OrderPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [closing, setClosing] = useState(false);
   const [closingIds, setClosingIds] = useState<Set<string>>(new Set());
-  const [confirmClose, setConfirmClose] = useState<string[] | null>(null);
+  const [bulkCloseIds, setBulkCloseIds] = useState<string[] | null>(null);
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
+  const { schedule } = useScheduler();
 
   // Keep a stable ref so interval callback always sees latest orders
   const openOrdersRef = useRef(openOrders);
@@ -91,13 +92,30 @@ export default function OrderPanel({
     else setSelected(new Set(openOrders.map((o) => o.id)));
   }
 
-  async function performCloseSingle(id: string, quantity: number) {
+  async function performCloseSingle(id: string, quantity: number, delayMs: number) {
+    const target = closeTarget;
     setCloseTarget(null);
+    if (delayMs > 0 && target) {
+      const label = `Close ${quantity} ${target.symbol}`;
+      schedule(label, delayMs, () => performClose([{ id, quantity }]));
+      toast("success", `Scheduled: ${label} in ${Math.round(delayMs / 1000)}s`);
+      return;
+    }
     await performClose([{ id, quantity }]);
   }
 
+  function performBulkClose(ids: string[], delayMs: number) {
+    setBulkCloseIds(null);
+    if (delayMs > 0) {
+      const label = `Close ${ids.length} position${ids.length !== 1 ? "s" : ""}`;
+      schedule(label, delayMs, () => performClose(ids.map((id) => ({ id }))));
+      toast("success", `Scheduled: ${label} in ${Math.round(delayMs / 1000)}s`);
+      return;
+    }
+    performClose(ids.map((id) => ({ id })));
+  }
+
   async function performClose(orders: { id: string; quantity?: number }[]) {
-    setConfirmClose(null);
     setClosing(true);
     setClosingIds(new Set(orders.map((o) => o.id)));
     try {
@@ -124,7 +142,7 @@ export default function OrderPanel({
 
   function handleBulkClose() {
     const ids = openOrders.filter((o) => selected.has(o.id)).map((o) => o.id);
-    if (ids.length > 0) setConfirmClose(ids);
+    if (ids.length > 0) setBulkCloseIds(ids);
   }
 
   // Profit tab aggregation
@@ -134,23 +152,21 @@ export default function OrderPanel({
   const totalLosses = profitBySymbol.reduce((s, r) => s + r.losses, 0);
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
-    { key: "open", label: "Open", count: openOrders.length },
+    { key: "open", label: "Positions", count: openOrders.length },
     { key: "history", label: "History", count: closedLoaded ? closedOrders.length : undefined },
     { key: "profit", label: "Profit / Loss", count: closedLoaded ? profitBySymbol.length : undefined },
   ];
 
   return (
     <>
-      {/* Modals rendered OUTSIDE the overflow-hidden container */}
-      <ConfirmDialog
-        open={confirmClose !== null}
-        title="Close orders?"
-        message={<>Close <span className="font-semibold text-neutral-200">{confirmClose?.length ?? 0}</span> order{(confirmClose?.length ?? 0) !== 1 ? "s" : ""}? Opposite market orders will be placed on the testnet.</>}
-        confirmLabel="Close Orders"
-        kind="danger"
-        onConfirm={() => confirmClose && performClose(confirmClose.map((id) => ({ id })))}
-        onCancel={() => setConfirmClose(null)}
-      />
+      {/* Bulk close modal with optional timer */}
+      {bulkCloseIds && (
+        <BulkCloseModal
+          count={bulkCloseIds.length}
+          onConfirm={(delayMs) => performBulkClose(bulkCloseIds, delayMs)}
+          onCancel={() => setBulkCloseIds(null)}
+        />
+      )}
       {/* Inline close quantity modal */}
       {closeTarget && (
         <CloseQuantityModal
@@ -206,7 +222,7 @@ export default function OrderPanel({
         {/* ── OPEN TAB ── */}
         {tab === "open" && (
           openOrders.length === 0 ? (
-            <EmptyState icon="📋" title="No open orders" sub="Select symbols and click Buy / Sell." />
+            <EmptyState icon="📋" title="No open positions" sub="Select symbols and click Buy / Sell." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -383,15 +399,19 @@ function CloseQuantityModal({
   onCancel,
 }: {
   target: { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
-  onConfirm: (id: string, quantity: number) => void;
+  onConfirm: (id: string, quantity: number, delayMs: number) => void;
   onCancel: () => void;
 }) {
   const [qty, setQty] = useState("");
   const [error, setError] = useState("");
+  const [scheduleOn, setScheduleOn] = useState(false);
+  const [delayMs, setDelayMs] = useState(0);
 
   useEffect(() => {
     setQty("");
     setError("");
+    setScheduleOn(false);
+    setDelayMs(0);
   }, [target.id]);
 
   useEffect(() => {
@@ -421,7 +441,7 @@ function CloseQuantityModal({
       setError(`Notional too low: $${(val * price).toFixed(2)} (min $5)`);
       return;
     }
-    onConfirm(target.id, val);
+    onConfirm(target.id, val, scheduleOn ? delayMs : 0);
   }
 
   // Calculate minimum quantity needed to meet $5 notional
@@ -497,6 +517,13 @@ function CloseQuantityModal({
           {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
         </div>
 
+        <TimerInput
+          enabled={scheduleOn}
+          setEnabled={setScheduleOn}
+          delayMs={delayMs}
+          setDelayMs={setDelayMs}
+        />
+
         <div className="mt-5 flex justify-end gap-2">
           <button
             onClick={onCancel}
@@ -508,7 +535,65 @@ function CloseQuantityModal({
             onClick={handleConfirm}
             className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
           >
-            Close Position
+            {scheduleOn && delayMs > 0 ? "Schedule Close" : "Close Position"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkCloseModal({
+  count,
+  onConfirm,
+  onCancel,
+}: {
+  count: number;
+  onConfirm: (delayMs: number) => void;
+  onCancel: () => void;
+}) {
+  const [scheduleOn, setScheduleOn] = useState(false);
+  const [delayMs, setDelayMs] = useState(0);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-md rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl ring-1 ring-red-500/20">
+        <div className="flex items-start gap-4">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500/10 text-xl font-bold text-red-400">⚠</div>
+          <div className="flex-1">
+            <h3 className="text-base font-semibold text-neutral-100">Close {count} position{count !== 1 ? "s" : ""}?</h3>
+            <p className="mt-1 text-sm text-neutral-400">
+              Opposite market orders will be placed on the testnet at full quantity for each selected position.
+            </p>
+          </div>
+        </div>
+
+        <TimerInput
+          enabled={scheduleOn}
+          setEnabled={setScheduleOn}
+          delayMs={delayMs}
+          setDelayMs={setDelayMs}
+        />
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(scheduleOn ? delayMs : 0)}
+            className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500"
+          >
+            {scheduleOn && delayMs > 0 ? "Schedule Close" : "Close Orders"}
           </button>
         </div>
       </div>

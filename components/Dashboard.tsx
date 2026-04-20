@@ -5,6 +5,7 @@ import SymbolTable from "./SymbolTable";
 import OrderPanel from "./OrderPanel";
 import { useToast } from "./Toast";
 import type { OrderResult } from "./QuantityModal";
+import { SchedulerProvider, ScheduledTasksPanel } from "./Scheduler";
 
 type SymbolRow = {
   id: string;
@@ -79,16 +80,19 @@ export default function Dashboard({
   }
 
   return (
-    <section className="grid gap-5 lg:grid-cols-5">
-      <div className="lg:col-span-3">
-        <SymbolTable
-          initial={initialSymbols}
-          onPlaceOrders={handlePlaceOrders}
-        />
-      </div>
-      <div className="lg:col-span-2">
-        <OrderPanel initialOrders={initialOrders} refreshKey={orderVersion} />
-      </div>
-    </section>
+    <SchedulerProvider>
+      <section className="grid gap-5 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <SymbolTable
+            initial={initialSymbols}
+            onPlaceOrders={handlePlaceOrders}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <OrderPanel initialOrders={initialOrders} refreshKey={orderVersion} />
+        </div>
+      </section>
+      <ScheduledTasksPanel />
+    </SchedulerProvider>
   );
 }

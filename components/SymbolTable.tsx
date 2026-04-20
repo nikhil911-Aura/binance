@@ -261,7 +261,10 @@ export default function SymbolTable({
         open={orderModal !== null}
         side={orderModal?.side ?? "BUY"}
         symbolCount={selected.size}
-        symbols={Array.from(selected)}
+        symbols={Array.from(selected).map((name) => ({
+          name,
+          price: rows.find((r) => r.name === name)?.markPrice ?? null,
+        }))}
         onConfirm={handlePlaceOrder}
         onCancel={() => setOrderModal(null)}
       />
