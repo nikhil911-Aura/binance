@@ -12,8 +12,10 @@ export default function SettingsPage() {
   const [binanceUrl, setBinanceUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeySet, setApiKeySet] = useState(false);
+  const [apiKeyMasked, setApiKeyMasked] = useState<string | null>(null);
   const [apiSecret, setApiSecret] = useState("");
   const [secretSet, setSecretSet] = useState(false);
+  const [apiSecretMasked, setApiSecretMasked] = useState<string | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,7 +28,9 @@ export default function SettingsPage() {
       .then((data) => {
         setBinanceUrl(data.binanceUrl ?? "");
         setApiKeySet(data.binanceApiKeySet ?? false);
+        setApiKeyMasked(data.binanceApiKeyMasked ?? null);
         setSecretSet(data.binanceApiSecretSet ?? false);
+        setApiSecretMasked(data.binanceApiSecretMasked ?? null);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -46,8 +50,16 @@ export default function SettingsPage() {
       });
       if (!res.ok) throw new Error("Failed to save");
       setSaved(true);
-      if (apiKey.length > 0) { setApiKeySet(true); setApiKey(""); }
-      if (apiSecret.length > 0) { setSecretSet(true); setApiSecret(""); }
+      if (apiKey.length > 0) {
+        setApiKeySet(true);
+        setApiKeyMasked(`${apiKey.slice(0, 4)}${"•".repeat(8)}${apiKey.slice(-4)}`);
+        setApiKey("");
+      }
+      if (apiSecret.length > 0) {
+        setSecretSet(true);
+        setApiSecretMasked(`${apiSecret.slice(0, 4)}${"•".repeat(8)}${apiSecret.slice(-4)}`);
+        setApiSecret("");
+      }
       setTimeout(() => setSaved(false), 3000);
     } catch {
       setError("Failed to save settings");
@@ -137,6 +149,11 @@ export default function SettingsPage() {
                   className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
                   placeholder={apiKeySet ? "Leave blank to keep existing key" : "Paste your API key"}
                 />
+                {apiKeyMasked && (
+                  <p className="mt-1.5 text-xs text-neutral-500">
+                    Active key: <span className="font-mono text-neutral-300">{apiKeyMasked}</span>
+                  </p>
+                )}
               </div>
               <div>
                 <label className="mb-1 flex items-center justify-between text-xs uppercase text-neutral-500">
@@ -152,6 +169,11 @@ export default function SettingsPage() {
                   className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
                   placeholder={secretSet ? "Leave blank to keep existing secret" : "Paste your API secret"}
                 />
+                {apiSecretMasked && (
+                  <p className="mt-1.5 text-xs text-neutral-500">
+                    Active secret: <span className="font-mono text-neutral-300">{apiSecretMasked}</span>
+                  </p>
+                )}
               </div>
             </div>
           </div>

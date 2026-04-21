@@ -4,12 +4,20 @@ import { getSettings, invalidateSettingsCache } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
+function maskValue(val: string): string | null {
+  if (val.length === 0) return null;
+  if (val.length <= 8) return `${val.slice(0, 2)}${"•".repeat(val.length - 2)}`;
+  return `${val.slice(0, 4)}${"•".repeat(8)}${val.slice(-4)}`;
+}
+
 export async function GET() {
   const settings = await getSettings();
   return NextResponse.json({
     binanceUrl: settings.binanceUrl,
     binanceApiKeySet: settings.binanceApiKey.length > 0,
     binanceApiSecretSet: settings.binanceApiSecret.length > 0,
+    binanceApiKeyMasked: maskValue(settings.binanceApiKey),
+    binanceApiSecretMasked: maskValue(settings.binanceApiSecret),
   });
 }
 

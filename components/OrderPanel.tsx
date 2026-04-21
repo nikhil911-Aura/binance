@@ -15,6 +15,7 @@ type OrderRow = {
   binanceOrderId: string | null;
   pendingCloseOrderId: string | null;
   pendingClosePrice: number | null;
+  stopLoss: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -22,6 +23,7 @@ type OrderRow = {
 
 type Tab = "open" | "pending" | "scheduled" | "history" | "profit";
 type CloseTarget = { id: string; symbol: string; side: string; quantity: number; entryPrice: number | null };
+type SlTarget = { id: string; symbol: string; side: string; entryPrice: number | null; currentSl: number | null };
 
 /** Returns the closing action side — opposite of the stored position side. */
 function closingSide(side: string) {
@@ -50,6 +52,7 @@ export default function OrderPanel({
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingLoaded, setPendingLoaded] = useState(false);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
+  const [slTarget, setSlTarget] = useState<SlTarget | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
   const { schedule, tasks: scheduledTasks, cancel: cancelScheduled, loading: schedulerLoading } = useScheduler();
@@ -97,12 +100,16 @@ export default function OrderPanel({
     try {
       const res = await fetch("/api/orders/sync-pending", { method: "POST" });
       if (!res.ok) return;
-      const data = await res.json() as { filled: number; orders: OrderRow[]; pendingCloses: OrderRow[] };
+      const data = await res.json() as { filled: number; slTriggered: number; orders: OrderRow[]; pendingCloses: OrderRow[] };
       setPendingOrders(data.orders);
       setPendingCloseOrders(data.pendingCloses ?? []);
       setPendingLoaded(true);
       if (data.filled > 0) {
         toast("success", `${data.filled} limit order${data.filled !== 1 ? "s" : ""} filled!`);
+        await fetchOpenOrders(false);
+      }
+      if (data.slTriggered > 0) {
+        toast("success", `${data.slTriggered} stop loss${data.slTriggered !== 1 ? "es" : ""} triggered!`);
         await fetchOpenOrders(false);
       }
     } catch { /* skip */ }
@@ -212,6 +219,21 @@ export default function OrderPanel({
     finally { setCancellingIds((s) => { const n = new Set(s); n.delete(id); return n; }); }
   }
 
+  async function handleSetSl(id: string, stopLoss: number | null) {
+    try {
+      const res = await fetch("/api/orders/set-sl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, stopLoss }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast("error", data.error ?? "Failed to set SL"); return; }
+      setOpenOrders((prev) => prev.map((o) => o.id === id ? { ...o, stopLoss } : o));
+      toast("success", stopLoss != null ? `Stop loss set @ $${stopLoss}` : "Stop loss removed");
+      setSlTarget(null);
+    } catch { toast("error", "Network error"); }
+  }
+
   function handleBulkClose() {
     const ids = openOrders.filter((o) => selected.has(o.id)).map((o) => o.id);
     if (ids.length > 0) setBulkCloseIds(ids);
@@ -239,6 +261,14 @@ export default function OrderPanel({
           count={bulkCloseIds.length}
           onConfirm={(delayMs) => performBulkClose(bulkCloseIds, delayMs)}
           onCancel={() => setBulkCloseIds(null)}
+        />
+      )}
+      {/* Stop loss modal */}
+      {slTarget && (
+        <StopLossModal
+          target={slTarget}
+          onConfirm={(stopLoss) => handleSetSl(slTarget.id, stopLoss)}
+          onCancel={() => setSlTarget(null)}
         />
       )}
       {/* Inline close quantity modal */}
@@ -317,6 +347,7 @@ export default function OrderPanel({
                     <th className="px-3 py-2">Side</th>
                     <th className="px-3 py-2">Qty</th>
                     <th className="px-3 py-2">Entry</th>
+                    <th className="px-3 py-2">Stop Loss</th>
                     <th className="px-3 py-2 text-right">Action</th>
                   </tr>
                 </thead>
@@ -335,6 +366,14 @@ export default function OrderPanel({
                         <td className="px-3 py-2 font-mono text-neutral-300">{order.quantity}</td>
                         <td className="px-3 py-2 font-mono text-neutral-400">
                           {order.entryPrice != null ? `$${order.entryPrice.toFixed(4)}` : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <button
+                            onClick={() => setSlTarget({ id: order.id, symbol: order.symbol, side: order.side, entryPrice: order.entryPrice, currentSl: order.stopLoss })}
+                            className={`font-mono text-xs ${order.stopLoss != null ? "text-orange-400 hover:text-orange-300" : "text-neutral-600 hover:text-neutral-400"}`}
+                          >
+                            {order.stopLoss != null ? `$${order.stopLoss.toFixed(4)}` : "+ Set SL"}
+                          </button>
                         </td>
                         <td className="px-3 py-2 text-right">
                           {order.pendingCloseOrderId ? (
@@ -945,6 +984,99 @@ function ScheduledTab({
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function StopLossModal({
+  target,
+  onConfirm,
+  onCancel,
+}: {
+  target: SlTarget;
+  onConfirm: (stopLoss: number | null) => void;
+  onCancel: () => void;
+}) {
+  const [price, setPrice] = useState(target.currentSl != null ? String(target.currentSl) : "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  const isLong = target.side === "BUY";
+
+  async function handleSave() {
+    const val = parseFloat(price);
+    if (isNaN(val) || val <= 0) { setError("Enter a valid price"); return; }
+    if (target.entryPrice != null) {
+      if (isLong && val >= target.entryPrice) { setError("SL must be below entry price for a long"); return; }
+      if (!isLong && val <= target.entryPrice) { setError("SL must be above entry price for a short"); return; }
+    }
+    setSaving(true);
+    await onConfirm(val);
+    setSaving(false);
+  }
+
+  async function handleRemove() {
+    setSaving(true);
+    await onConfirm(null);
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel} />
+      <div className="relative w-full max-w-sm rounded-xl border border-neutral-800 bg-neutral-900 p-6 shadow-2xl ring-1 ring-orange-500/20">
+        <h3 className="text-base font-semibold text-neutral-100">Stop Loss — <span className="font-mono">{target.symbol}</span></h3>
+        <p className="mt-1 text-xs text-neutral-500">
+          {isLong ? "Long position: SL triggers when price drops to or below your target." : "Short position: SL triggers when price rises to or above your target."}
+        </p>
+
+        {target.entryPrice != null && (
+          <div className="mt-3 flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-950/50 px-3 py-2 text-xs">
+            <span className="text-neutral-500">Entry price</span>
+            <span className="font-mono text-neutral-300">${target.entryPrice.toFixed(4)}</span>
+          </div>
+        )}
+
+        <div className="mt-3">
+          <label className="text-xs uppercase text-neutral-500">Stop loss price</label>
+          <input
+            type="number"
+            step="any"
+            min="0"
+            value={price}
+            onChange={(e) => { setPrice(e.target.value); setError(""); }}
+            autoFocus
+            placeholder={isLong ? "e.g. 65000 (below entry)" : "e.g. 85000 (above entry)"}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+            className="mt-1 w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-orange-500 placeholder:text-neutral-600"
+          />
+          {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-2">
+          <div>
+            {target.currentSl != null && (
+              <button onClick={handleRemove} disabled={saving} className="text-xs text-neutral-500 hover:text-red-400 disabled:opacity-40">
+                Remove SL
+              </button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={onCancel} className="rounded-md border border-neutral-700 bg-neutral-800 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-700">
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving} className="rounded-md bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50">
+              {saving ? "Saving…" : "Set Stop Loss"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

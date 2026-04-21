@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { syncPendingOrders } from "@/lib/orderService";
+import { syncPendingOrders, checkStopLosses } from "@/lib/orderService";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const { filled } = await syncPendingOrders();
+  const [{ filled }, slTriggered] = await Promise.all([
+    syncPendingOrders(),
+    checkStopLosses(),
+  ]);
   const [pendingOpen, pendingClose] = await Promise.all([
     prisma.order.findMany({
       where: { status: "PENDING" },
@@ -16,5 +19,5 @@ export async function POST() {
       orderBy: { createdAt: "desc" },
     }),
   ]);
-  return NextResponse.json({ filled, orders: pendingOpen, pendingCloses: pendingClose });
+  return NextResponse.json({ filled, slTriggered, orders: pendingOpen, pendingCloses: pendingClose });
 }

@@ -260,6 +260,58 @@ export async function cancelPendingOrder(id: string) {
   await prisma.order.delete({ where: { id } });
 }
 
+/** Check all OPEN orders with a stopLoss set and market-close any that have been triggered. */
+export async function checkStopLosses(): Promise<number> {
+  const orders = await prisma.order.findMany({
+    where: { status: "OPEN", stopLoss: { not: null }, pendingCloseOrderId: null },
+  });
+  if (orders.length === 0) return 0;
+
+  // Fetch mark prices for all unique symbols in one pass
+  const symbols = [...new Set(orders.map((o) => o.symbol))];
+  const prices = new Map<string, number>();
+  await Promise.allSettled(
+    symbols.map(async (sym) => {
+      try {
+        prices.set(sym, await getMarkPrice(sym));
+      } catch { /* skip */ }
+    }),
+  );
+
+  let triggered = 0;
+  await Promise.allSettled(
+    orders.map(async (order) => {
+      const markPrice = prices.get(order.symbol);
+      if (markPrice == null || order.stopLoss == null) return;
+
+      const isLong = order.side === "BUY";
+      const slHit = isLong
+        ? markPrice <= order.stopLoss   // long: SL hit when price drops to/below SL
+        : markPrice >= order.stopLoss;  // short: SL hit when price rises to/above SL
+
+      if (!slHit) return;
+
+      try {
+        const res = await closePosition(order.symbol, order.side as "BUY" | "SELL", order.quantity);
+        const exitPrice = parseFloat(res.avgPrice) || markPrice;
+        const profit = order.entryPrice != null
+          ? (isLong ? exitPrice - order.entryPrice : order.entryPrice - exitPrice) * order.quantity
+          : null;
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: "CLOSED", exitPrice, profit, stopLoss: null },
+        });
+        triggered++;
+        console.log(`[stop-loss] ${order.symbol} SL triggered @ ${markPrice} (SL: ${order.stopLoss})`);
+      } catch (e) {
+        console.error(`[stop-loss] ${order.symbol} close failed:`, e);
+      }
+    }),
+  );
+
+  return triggered;
+}
+
 /** Cancel a pending limit close on Binance and clear the pendingCloseOrderId on the OPEN order. */
 export async function cancelPendingClose(id: string) {
   const order = await prisma.order.findUnique({ where: { id } });

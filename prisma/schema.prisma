@@ -32,6 +32,7 @@ model Order {
   binanceOrderId       String?
   pendingCloseOrderId  String? // set when a limit close is placed but not yet filled
   pendingClosePrice    Float?  // limit price for pending close order
+  stopLoss             Float?  // auto-close when mark price crosses this level
   status               String   @default("OPEN") // OPEN, CLOSED, PENDING
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
