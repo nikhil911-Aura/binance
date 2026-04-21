@@ -234,7 +234,24 @@ function parseHMS(input: string): number {
   return (h * 3600 + m * 60 + s) * 1000;
 }
 
-/** Reusable timer input — HH:MM:SS format. Returns delayMs (0 when disabled). */
+function parseTargetTime(input: string): number {
+  const parts = input.split(":").map((p) => p.trim());
+  if (parts.length !== 3) return 0;
+  const [h, m, s] = parts.map((p) => parseInt(p, 10));
+  if ([h, m, s].some((n) => isNaN(n) || n < 0)) return 0;
+  if (h > 23 || m >= 60 || s >= 60) return 0;
+
+  const now = new Date();
+  const target = new Date();
+  target.setHours(h, m, s, 0);
+
+  // If target time is in the past, assume next day
+  if (target <= now) target.setDate(target.getDate() + 1);
+
+  return target.getTime() - now.getTime();
+}
+
+/** Reusable timer input — supports countdown (HH:MM:SS) and target time modes. */
 export function TimerInput({
   enabled,
   setEnabled,
@@ -246,22 +263,59 @@ export function TimerInput({
   delayMs: number;
   setDelayMs: (ms: number) => void;
 }) {
-  const [input, setInput] = useState("00:00:30");
+  const [mode, setMode] = useState<"countdown" | "target">("countdown");
+  const [countdownInput, setCountdownInput] = useState("00:00:30");
+  const [targetInput, setTargetInput] = useState(() => {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(now.getSeconds()).padStart(2, "0")}`;
+  });
+  const [targetDelayMs, setTargetDelayMs] = useState(0);
 
-  function update(next: string) {
-    setInput(next);
+  function updateCountdown(next: string) {
+    setCountdownInput(next);
     setDelayMs(parseHMS(next));
   }
 
-  // Sync initial value when enabled is toggled on
+  function updateTarget(next: string) {
+    setTargetInput(next);
+    const ms = parseTargetTime(next);
+    setTargetDelayMs(ms);
+    setDelayMs(ms);
+  }
+
   useEffect(() => {
-    if (enabled && delayMs === 0) {
-      setDelayMs(parseHMS(input));
+    if (!enabled) return;
+    if (mode === "countdown") setDelayMs(parseHMS(countdownInput));
+    else {
+      const ms = parseTargetTime(targetInput);
+      setTargetDelayMs(ms);
+      setDelayMs(ms);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, mode]);
 
-  const isValid = delayMs > 0 || !enabled;
+  // Recalculate target delay every second so countdown label stays fresh
+  useEffect(() => {
+    if (!enabled || mode !== "target") return;
+    const id = setInterval(() => {
+      const ms = parseTargetTime(targetInput);
+      setTargetDelayMs(ms);
+      setDelayMs(ms);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [enabled, mode, targetInput, setDelayMs]);
+
+  const countdownValid = !enabled || parseHMS(countdownInput) > 0;
+  const targetValid = !enabled || parseTargetTime(targetInput) > 0;
+  const isValid = mode === "countdown" ? countdownValid : targetValid;
+
+  function formatMs(ms: number) {
+    const totalSec = Math.max(0, Math.round(ms / 1000));
+    const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0");
+    const ss = String(totalSec % 60).padStart(2, "0");
+    return `${hh}:${mm}:${ss}`;
+  }
 
   return (
     <div className="mt-3 rounded-md border border-neutral-800 bg-neutral-950/40 p-3">
@@ -272,26 +326,63 @@ export function TimerInput({
           onChange={(e) => setEnabled(e.target.checked)}
           className="accent-amber-500"
         />
-        <span className="flex items-center gap-1">
-          ⏱ <span>Schedule for later</span>
-        </span>
+        <span className="flex items-center gap-1">⏱ Schedule for later</span>
       </label>
+
       {enabled && (
-        <div className="mt-2">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => update(e.target.value)}
-              placeholder="HH:MM:SS"
-              pattern="[0-9]{1,2}:[0-9]{2}:[0-9]{2}"
-              className={`w-32 rounded border bg-neutral-950 px-2 py-1 text-center font-mono text-sm outline-none focus:border-amber-500 ${isValid ? "border-neutral-700" : "border-red-500"}`}
-            />
-            <span className="text-xs text-neutral-500">from now (HH:MM:SS)</span>
+        <div className="mt-2 space-y-2">
+          {/* Mode toggle */}
+          <div className="flex rounded-md border border-neutral-700 text-xs font-medium overflow-hidden w-fit">
+            <button
+              onClick={() => setMode("countdown")}
+              className={`px-3 py-1.5 transition-colors ${mode === "countdown" ? "bg-amber-600 text-white" : "bg-neutral-800 text-neutral-400 hover:text-neutral-200"}`}
+            >
+              Countdown
+            </button>
+            <button
+              onClick={() => setMode("target")}
+              className={`px-3 py-1.5 border-l border-neutral-700 transition-colors ${mode === "target" ? "bg-amber-600 text-white" : "bg-neutral-800 text-neutral-400 hover:text-neutral-200"}`}
+            >
+              Target Time
+            </button>
           </div>
+
+          {mode === "countdown" ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={countdownInput}
+                onChange={(e) => updateCountdown(e.target.value)}
+                placeholder="HH:MM:SS"
+                className={`w-32 rounded border bg-neutral-950 px-2 py-1 text-center font-mono text-sm outline-none focus:border-amber-500 ${countdownValid ? "border-neutral-700" : "border-red-500"}`}
+              />
+              <span className="text-xs text-neutral-500">from now</span>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={targetInput}
+                  onChange={(e) => updateTarget(e.target.value)}
+                  placeholder="HH:MM:SS"
+                  className={`w-32 rounded border bg-neutral-950 px-2 py-1 text-center font-mono text-sm outline-none focus:border-amber-500 ${targetValid ? "border-neutral-700" : "border-red-500"}`}
+                />
+                <span className="text-xs text-neutral-500">today / tomorrow</span>
+              </div>
+              {targetDelayMs > 0 && (
+                <p className="text-xs text-amber-400">
+                  Executes in {formatMs(targetDelayMs)}
+                </p>
+              )}
+            </div>
+          )}
+
           {!isValid && (
-            <p className="mt-1 text-xs text-red-400">
-              Invalid format — use HH:MM:SS (e.g. 00:01:30 for 1m 30s)
+            <p className="text-xs text-red-400">
+              {mode === "countdown"
+                ? "Invalid format — use HH:MM:SS (e.g. 00:01:30)"
+                : "Invalid time — use HH:MM:SS (e.g. 16:29:55)"}
             </p>
           )}
         </div>
