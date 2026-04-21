@@ -27,6 +27,7 @@ type OrderRow = {
   binanceOrderId: string | null;
   pendingCloseOrderId: string | null;
   pendingClosePrice: number | null;
+  stopLoss: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
