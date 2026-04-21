@@ -13,13 +13,16 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState("");
   const [apiKeySet, setApiKeySet] = useState(false);
   const [apiKeyMasked, setApiKeyMasked] = useState<string | null>(null);
+  const [apiKeyFromDb, setApiKeyFromDb] = useState(false);
   const [apiSecret, setApiSecret] = useState("");
   const [secretSet, setSecretSet] = useState(false);
   const [apiSecretMasked, setApiSecretMasked] = useState<string | null>(null);
+  const [apiSecretFromDb, setApiSecretFromDb] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [clearing, setClearing] = useState<"key" | "secret" | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -29,8 +32,10 @@ export default function SettingsPage() {
         setBinanceUrl(data.binanceUrl ?? "");
         setApiKeySet(data.binanceApiKeySet ?? false);
         setApiKeyMasked(data.binanceApiKeyMasked ?? null);
+        setApiKeyFromDb(data.binanceApiKeyFromDb ?? false);
         setSecretSet(data.binanceApiSecretSet ?? false);
         setApiSecretMasked(data.binanceApiSecretMasked ?? null);
+        setApiSecretFromDb(data.binanceApiSecretFromDb ?? false);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -53,11 +58,13 @@ export default function SettingsPage() {
       if (apiKey.length > 0) {
         setApiKeySet(true);
         setApiKeyMasked(`${apiKey.slice(0, 4)}${"•".repeat(8)}${apiKey.slice(-4)}`);
+        setApiKeyFromDb(true);
         setApiKey("");
       }
       if (apiSecret.length > 0) {
         setSecretSet(true);
         setApiSecretMasked(`${apiSecret.slice(0, 4)}${"•".repeat(8)}${apiSecret.slice(-4)}`);
+        setApiSecretFromDb(true);
         setApiSecret("");
       }
       setTimeout(() => setSaved(false), 3000);
@@ -65,6 +72,25 @@ export default function SettingsPage() {
       setError("Failed to save settings");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleClear(field: "key" | "secret") {
+    setClearing(field);
+    try {
+      const key = field === "key" ? "binanceApiKey" : "binanceApiSecret";
+      const res = await fetch("/api/settings", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      if (!res.ok) throw new Error();
+      if (field === "key") { setApiKeySet(false); setApiKeyMasked(null); setApiKeyFromDb(false); }
+      else { setSecretSet(false); setApiSecretMasked(null); setApiSecretFromDb(false); }
+    } catch {
+      setError("Failed to clear");
+    } finally {
+      setClearing(null);
     }
   }
 
@@ -149,10 +175,23 @@ export default function SettingsPage() {
                   className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
                   placeholder={apiKeySet ? "Leave blank to keep existing key" : "Paste your API key"}
                 />
-                {apiKeyMasked && (
-                  <p className="mt-1.5 text-xs text-neutral-500">
-                    Active key: <span className="font-mono text-neutral-300">{apiKeyMasked}</span>
-                  </p>
+                {apiKeyFromDb && apiKeyMasked ? (
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <p className="text-xs text-neutral-500">
+                      Active key: <span className="font-mono text-neutral-300">{apiKeyMasked}</span>
+                    </p>
+                    <button
+                      onClick={() => handleClear("key")}
+                      disabled={clearing === "key"}
+                      className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40"
+                    >
+                      {clearing === "key" ? "Clearing…" : "Clear (use .env)"}
+                    </button>
+                  </div>
+                ) : apiKeySet ? (
+                  <p className="mt-1.5 text-xs text-neutral-500">Using key from <span className="text-amber-400">.env</span> — paste a new key above to override</p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-red-500">No key set — paste your API key above</p>
                 )}
               </div>
               <div>
@@ -169,10 +208,23 @@ export default function SettingsPage() {
                   className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
                   placeholder={secretSet ? "Leave blank to keep existing secret" : "Paste your API secret"}
                 />
-                {apiSecretMasked && (
-                  <p className="mt-1.5 text-xs text-neutral-500">
-                    Active secret: <span className="font-mono text-neutral-300">{apiSecretMasked}</span>
-                  </p>
+                {apiSecretFromDb && apiSecretMasked ? (
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <p className="text-xs text-neutral-500">
+                      Active secret: <span className="font-mono text-neutral-300">{apiSecretMasked}</span>
+                    </p>
+                    <button
+                      onClick={() => handleClear("secret")}
+                      disabled={clearing === "secret"}
+                      className="text-xs text-red-500 hover:text-red-400 disabled:opacity-40"
+                    >
+                      {clearing === "secret" ? "Clearing…" : "Clear (use .env)"}
+                    </button>
+                  </div>
+                ) : secretSet ? (
+                  <p className="mt-1.5 text-xs text-neutral-500">Using secret from <span className="text-amber-400">.env</span> — paste a new secret above to override</p>
+                ) : (
+                  <p className="mt-1.5 text-xs text-red-500">No secret set — paste your API secret above</p>
                 )}
               </div>
             </div>
