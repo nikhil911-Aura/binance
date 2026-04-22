@@ -54,6 +54,36 @@ export async function isValidSymbol(symbol: string): Promise<boolean> {
   return (await fetchPremiumIndex(symbol, 0)) !== null;
 }
 
+export type Kline = {
+  openTime: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+/** Fetch 1-minute mark price klines for a symbol between startTime and endTime. */
+export async function fetchMarkPriceKlines(
+  symbol: string,
+  startTime: number,
+  endTime: number,
+  limit = 1500,
+): Promise<Kline[]> {
+  const url = `${BINANCE_API_URL}/fapi/v1/markPriceKlines?symbol=${encodeURIComponent(symbol)}&interval=1m&startTime=${startTime}&endTime=${endTime}&limit=${limit}`;
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(`markPriceKlines ${res.status}`);
+  const raw = (await res.json()) as unknown[][];
+  return raw.map((r) => ({
+    openTime: r[0] as number,
+    open: parseFloat(r[1] as string),
+    high: parseFloat(r[2] as string),
+    low: parseFloat(r[3] as string),
+    close: parseFloat(r[4] as string),
+    volume: parseFloat(r[5] as string),
+  }));
+}
+
 /** Fetch mark prices for all futures symbols in one call. Returns a map of symbol → price. */
 export async function fetchAllMarkPrices(): Promise<Map<string, number>> {
   const url = `${BINANCE_API_URL}/fapi/v1/premiumIndex`;

@@ -5,6 +5,7 @@ import { fetchAllMarkPrices } from "@/lib/binance";
 import SymbolForm from "@/components/SymbolForm";
 import Dashboard from "@/components/Dashboard";
 import StatsCards from "@/components/StatsCards";
+import PriceHistorySync from "@/components/PriceHistorySync";
 import { getSettings, PRESETS } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,10 @@ export default async function HomePage() {
           <span className={`rounded-full px-3 py-1 text-xs font-medium border ${isMainnet ? "border-emerald-700 bg-emerald-950/40 text-emerald-400" : "border-amber-700 bg-amber-950/40 text-amber-400"}`}>
             {isMainnet ? "Mainnet" : "Testnet"}
           </span>
+          <PriceHistorySync />
+          <Link href="/price-history" className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700">
+            Price History
+          </Link>
           <Link href="/settings" className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700">
             Settings
           </Link>
