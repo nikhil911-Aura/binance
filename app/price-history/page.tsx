@@ -29,7 +29,7 @@ export default function PriceHistoryPage() {
   const [range, setRange] = useState(24);
 
   // Chart — fetches a sample of points for the full range
-  const [chartData, setChartData] = useState<{ time: string; price: number }[]>([]);
+  const [chartData, setChartData] = useState<{ index: number; time: string; label?: string; price: number }[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
 
   // Table — server-side paginated
