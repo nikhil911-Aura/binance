@@ -42,7 +42,7 @@ export default function PriceChart({ data }: { data: ChartPoint[] }) {
           contentStyle={{ background: "#171717", border: "1px solid #404040", borderRadius: 8, fontSize: 12 }}
           labelStyle={{ color: "#a3a3a3" }}
           labelFormatter={(_, payload) => payload?.[0]?.payload?.label ?? ""}
-          formatter={(value: number) => [`$${value.toLocaleString(undefined, { maximumFractionDigits: 4 })}`, "Price"]}
+          formatter={(value) => [`$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })}`, "Price"]}
         />
         <Area type="monotone" dataKey="price" stroke="#10b981" strokeWidth={1.5} fill="url(#priceGrad)" dot={false} />
       </AreaChart>
