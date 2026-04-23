@@ -26,6 +26,7 @@ const PAGE_SIZE = 100;
 export default function PriceHistoryPage() {
   const [symbols, setSymbols] = useState<Symbol[]>([]);
   const [selected, setSelected] = useState("");
+  const [symbolsLoading, setSymbolsLoading] = useState(true);
   const [range, setRange] = useState(24);
 
   // Chart — fetches a sample of points for the full range
@@ -49,7 +50,8 @@ export default function PriceHistoryPage() {
       .then((data: Symbol[]) => {
         setSymbols(data);
         if (data.length > 0) setSelected(data[0].name);
-      });
+      })
+      .finally(() => setSymbolsLoading(false));
   }, []);
 
   // Fetch chart data (page 1, large limit for sampling)
@@ -133,13 +135,17 @@ export default function PriceHistoryPage() {
 
       {/* Controls */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <select
-          value={selected}
-          onChange={(e) => { setSelected(e.target.value); }}
-          className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-emerald-500"
-        >
-          {symbols.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-        </select>
+        {symbolsLoading ? (
+          <div className="h-9 w-36 animate-pulse rounded-md bg-neutral-800" />
+        ) : (
+          <select
+            value={selected}
+            onChange={(e) => { setSelected(e.target.value); }}
+            className="rounded-md border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm text-neutral-200 outline-none focus:border-emerald-500"
+          >
+            {symbols.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+          </select>
+        )}
 
         <div className="flex rounded-md border border-neutral-700 overflow-hidden text-xs font-medium">
           {RANGES.map((r) => (
