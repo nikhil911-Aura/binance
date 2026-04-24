@@ -94,7 +94,7 @@ export default function SymbolTable({
   const router = useRouter();
   const { toast } = useToast();
   const now = useNow(1000);
-  const livePrices = useMarkPriceStream(rows.map((r) => r.name));
+  const { prices: livePrices, status: streamStatus } = useMarkPriceStream(rows.map((r) => r.name));
 
   // Optimistic-add events
   useEffect(() => {
@@ -283,6 +283,24 @@ export default function SymbolTable({
             )}
             {refreshing && <span className="ml-2 text-emerald-400">• refreshing…</span>}
           </span>
+          {streamStatus === "live" && (
+            <span className="flex items-center gap-1 rounded-full bg-emerald-950 px-2 py-0.5 text-xs font-medium text-emerald-400">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Live · 1s
+            </span>
+          )}
+          {streamStatus === "polling" && (
+            <span className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-400" title="WebSocket unavailable — prices refresh every 10 seconds via REST API">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-500" />
+              Polling · 10s
+            </span>
+          )}
+          {streamStatus === "connecting" && (
+            <span className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-500">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-500 animate-pulse" />
+              Connecting…
+            </span>
+          )}
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}

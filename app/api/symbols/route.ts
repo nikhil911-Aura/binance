@@ -28,11 +28,13 @@ export async function GET(req: Request) {
     );
   }
 
-  // Attach live mark prices
+  // Attach live mark prices — also freshen updatedAt when live price is available
   const prices = await fetchAllMarkPrices();
+  const now = new Date();
   const withPrices = symbols.map((s) => ({
     ...s,
     markPrice: prices.get(s.name) ?? null,
+    updatedAt: prices.has(s.name) ? now : s.updatedAt,
   }));
 
   return NextResponse.json(withPrices);
