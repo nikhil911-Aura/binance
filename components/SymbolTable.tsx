@@ -12,6 +12,7 @@ import {
   EVT_SUCCESS,
   type SymbolRow as PendingRow,
 } from "@/lib/symbolEvents";
+import { useMarkPriceStream } from "@/hooks/useMarkPriceStream";
 
 type SymbolRow = {
   id: string;
@@ -94,6 +95,8 @@ export default function SymbolTable({
   const { toast } = useToast();
   const now = useNow(1000);
 
+  const livePrices = useMarkPriceStream(rows.map((r) => r.name));
+
   // Optimistic-add events
   useEffect(() => {
     const onPending = (e: Event) => {
@@ -136,9 +139,9 @@ export default function SymbolTable({
     }
   }
 
-  // Auto-poll every 30s
+  // Auto-poll every 60s for funding rate / metadata (prices come via WebSocket)
   useEffect(() => {
-    const id = setInterval(() => fetchRows(false), 30_000);
+    const id = setInterval(() => fetchRows(false), 60_000);
     return () => clearInterval(id);
   }, []);
 
@@ -264,7 +267,7 @@ export default function SymbolTable({
         symbolCount={selected.size}
         symbols={Array.from(selected).map((name) => ({
           name,
-          price: rows.find((r) => r.name === name)?.markPrice ?? null,
+          price: livePrices.get(name) ?? rows.find((r) => r.name === name)?.markPrice ?? null,
         }))}
         onConfirm={handlePlaceOrder}
         onCancel={() => setOrderModal(null)}
@@ -406,7 +409,19 @@ export default function SymbolTable({
                   </td>
                   <td className="px-4 py-3 font-mono font-semibold">{row.name}</td>
                   <td className="px-4 py-3 font-mono text-neutral-300">
-                    {row.markPrice != null ? formatPrice(row.markPrice) : <Skeleton className="h-4 w-20" />}
+                    {(() => {
+                      const live = livePrices.get(row.name);
+                      const price = live ?? row.markPrice;
+                      if (price == null) return <Skeleton className="h-4 w-20" />;
+                      return (
+                        <span className="flex items-center gap-1.5">
+                          {formatPrice(price)}
+                          {live != null && (
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" title="Live" />
+                          )}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className={`px-4 py-3 font-mono ${rate.color}`}>
                     {noData ? <Skeleton className="h-4 w-16" /> : rate.text}
