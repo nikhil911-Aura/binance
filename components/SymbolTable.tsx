@@ -138,9 +138,9 @@ export default function SymbolTable({
     }
   }
 
-  // Auto-poll every 10s — routes through server which proxies Binance REST
+  // Auto-poll every 2s — routes through server which proxies Binance REST
   useEffect(() => {
-    const id = setInterval(() => fetchRows(false), 10_000);
+    const id = setInterval(() => fetchRows(false), 2_000);
     return () => clearInterval(id);
   }, []);
 
@@ -290,9 +290,9 @@ export default function SymbolTable({
             </span>
           )}
           {streamStatus === "polling" && (
-            <span className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-400" title="WebSocket unavailable — prices refresh every 10 seconds via REST API">
+            <span className="flex items-center gap-1 rounded-full bg-neutral-800 px-2 py-0.5 text-xs font-medium text-neutral-400" title="WebSocket unavailable — prices refresh every 2 seconds via REST API">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-500" />
-              Polling · 10s
+              Polling · 2s
             </span>
           )}
           {streamStatus === "connecting" && (
