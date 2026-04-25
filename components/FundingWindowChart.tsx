@@ -61,7 +61,7 @@ export default function FundingWindowChart({
         <Tooltip
           contentStyle={{ background: "#171717", border: "1px solid #404040", borderRadius: 6 }}
           labelStyle={{ color: "#a3a3a3", fontSize: 11 }}
-          formatter={(value: number) => [formatPrice(value), "Price"]}
+          formatter={(value) => [formatPrice(Number(value)), "Price"]}
           labelFormatter={(t) => `${t > 0 ? "+" : ""}${t}s`}
         />
         <ReferenceLine
