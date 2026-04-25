@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { fetchPremiumIndex, fetchAllMarkPrices } from "@/lib/binance";
 import { refreshStaleSymbols } from "@/lib/updateFunding";
 import { invalidateBinanceMetaCache } from "@/lib/binanceMeta";
+import { recordIfInWindow } from "@/lib/fundingWindowRecorder";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ const SymbolSchema = z.object({
 });
 
 export async function GET(req: Request) {
-  await refreshStaleSymbols();
+  await Promise.all([refreshStaleSymbols(), recordIfInWindow()]);
   const sort = new URL(req.url).searchParams.get("sort");
   let symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
 

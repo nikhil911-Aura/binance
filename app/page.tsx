@@ -45,6 +45,9 @@ export default async function HomePage() {
           <Link href="/price-history" className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700">
             Price History
           </Link>
+          <Link href="/funding-windows" className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700">
+            Funding Windows
+          </Link>
           <Link href="/settings" className="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs text-neutral-300 hover:bg-neutral-700">
             Settings
           </Link>

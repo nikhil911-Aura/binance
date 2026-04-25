@@ -72,3 +72,16 @@ model ScheduledOrder {
 
   @@index([executeAt])
 }
+
+model FundingWindowPrice {
+  id          BigInt   @id @default(autoincrement())
+  symbol      String
+  price       Float
+  recordedAt  DateTime
+  fundingTime DateTime
+  fundingRate Float
+  phase       String   // "before" | "after"
+
+  @@index([symbol, fundingTime])
+  @@index([fundingTime])
+}
