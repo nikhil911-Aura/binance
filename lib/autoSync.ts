@@ -3,7 +3,7 @@ import { fetchAllPremiumData } from "./binance";
 import { loadFundingIntervals } from "./binanceMeta";
 
 const THRESHOLD = 0.03; // 3%
-const SYNC_INTERVAL_MS = 30_000;
+const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let lastSyncMs = 0;
 
 /**
