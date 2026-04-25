@@ -21,6 +21,7 @@ type SymbolRow = {
   nextFundingTime: string | null;
   fundingInterval: number | null;
   markPrice: number | null;
+  isFavorite: boolean;
   updatedAt?: string;
 };
 
@@ -424,7 +425,15 @@ export default function SymbolTable({
                       className="accent-emerald-500"
                     />
                   </td>
-                  <td className="px-4 py-3 font-mono font-semibold">{row.name}</td>
+                  <td className="px-4 py-3 font-mono font-semibold">
+                    <span className="flex items-center gap-1.5">
+                      {row.name}
+                      {row.isFavorite
+                        ? <span className="text-amber-400 text-xs" title="Manually added — always visible">★</span>
+                        : <span className="rounded bg-neutral-800 px-1 py-0.5 text-[10px] font-normal text-neutral-500" title="Auto-added — removed when rate drops below 3%">Auto</span>
+                      }
+                    </span>
+                  </td>
                   <td className="px-4 py-3 font-mono text-neutral-300">
                     {(() => {
                       const live = livePrices.get(row.name);

@@ -15,6 +15,7 @@ model Symbol {
   fundingRate     Float?
   nextFundingTime DateTime?
   fundingInterval Int?
+  isFavorite      Boolean   @default(false)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

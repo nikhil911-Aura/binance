@@ -14,6 +14,7 @@ type SymbolRow = {
   nextFundingTime: string | null;
   fundingInterval: number | null;
   markPrice: number | null;
+  isFavorite: boolean;
   updatedAt?: string;
 };
 type OrderRow = {

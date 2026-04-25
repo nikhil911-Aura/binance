@@ -31,7 +31,7 @@ export default function FundingWindowChart({
   const prices = data.map((p) => p.price);
   const minP = Math.min(...prices);
   const maxP = Math.max(...prices);
-  const pad = (maxP - minP) * 0.1 || 1;
+  const pad = Math.max((maxP - minP) * 0.1, maxP * 0.002);
 
   const formatPrice = (v: number) =>
     v >= 1000 ? `$${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : `$${v.toFixed(4)}`;

@@ -27,12 +27,12 @@ export async function GET(req: Request) {
     return NextResponse.json(rows);
   }
 
-  // Return list of recent funding events
+  // Return list of recent funding events grouped by symbol + fundingTime only
   const events = await prisma.fundingWindowPrice.groupBy({
-    by: ["symbol", "fundingTime", "fundingRate"],
+    by: ["symbol", "fundingTime"],
     where: symbol ? { symbol } : {},
     _count: { id: true },
-    _min: { price: true },
+    _min: { price: true, fundingRate: true },
     _max: { price: true },
     orderBy: { fundingTime: "desc" },
     take: 100,
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
     events.map((e) => ({
       symbol: e.symbol,
       fundingTime: e.fundingTime,
-      fundingRate: e.fundingRate,
+      fundingRate: e._min.fundingRate,
       dataPoints: e._count.id,
       minPrice: e._min.price,
       maxPrice: e._max.price,

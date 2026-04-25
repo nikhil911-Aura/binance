@@ -5,6 +5,7 @@ import { fetchPremiumIndex, fetchAllMarkPrices } from "@/lib/binance";
 import { refreshStaleSymbols } from "@/lib/updateFunding";
 import { invalidateBinanceMetaCache } from "@/lib/binanceMeta";
 import { recordIfInWindow } from "@/lib/fundingWindowRecorder";
+import { autoSyncSymbols } from "@/lib/autoSync";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ const SymbolSchema = z.object({
 });
 
 export async function GET(req: Request) {
-  await Promise.all([refreshStaleSymbols(), recordIfInWindow()]);
+  await Promise.all([refreshStaleSymbols(), recordIfInWindow(), autoSyncSymbols()]);
   const sort = new URL(req.url).searchParams.get("sort");
   let symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });
 
@@ -78,6 +79,7 @@ export async function POST(req: Request) {
       fundingRate: data.fundingRate,
       nextFundingTime: data.nextFundingTime,
       fundingInterval: data.fundingInterval,
+      isFavorite: true,
     },
   });
   return NextResponse.json(created, { status: 201 });
