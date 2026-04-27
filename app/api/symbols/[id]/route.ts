@@ -11,3 +11,15 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 }
+
+export async function PATCH(_req: Request, { params }: { params: { id: string } }) {
+  try {
+    const updated = await prisma.symbol.update({
+      where: { id: params.id },
+      data: { isFavorite: true },
+    });
+    return NextResponse.json(updated);
+  } catch {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+}

@@ -167,6 +167,18 @@ export default function SymbolTable({
     return () => { cancelled = true; };
   }, [now, rows]);
 
+  async function markFavorite(id: string) {
+    try {
+      const res = await fetch(`/api/symbols/${id}`, { method: "PATCH" });
+      if (res.ok) {
+        setRows((r) => r.map((s) => s.id === id ? { ...s, isFavorite: true } : s));
+        toast("success", "Marked as favorite");
+      }
+    } catch {
+      toast("error", "Failed to update");
+    }
+  }
+
   async function performDelete(row: SymbolRow) {
     setConfirmRow(null);
     setDeletingId(row.id);
@@ -429,8 +441,16 @@ export default function SymbolTable({
                     <span className="flex items-center gap-1.5">
                       {row.name}
                       {row.isFavorite
-                        ? <span className="text-amber-400 text-xs" title="Manually added — always visible">★</span>
-                        : <span className="rounded bg-neutral-800 px-1 py-0.5 text-[10px] font-normal text-neutral-500" title="Auto-added — removed when rate drops below 3%">Auto</span>
+                        ? <span className="text-amber-400 text-xs" title="Favorite — always visible">★</span>
+                        : (
+                          <button
+                            onClick={() => markFavorite(row.id)}
+                            title="Click to mark as favorite — will stay even if rate drops below 3%"
+                            className="rounded bg-neutral-800 px-1 py-0.5 text-[10px] font-normal text-neutral-500 hover:bg-amber-900/40 hover:text-amber-400 transition-colors"
+                          >
+                            Auto
+                          </button>
+                        )
                       }
                     </span>
                   </td>
