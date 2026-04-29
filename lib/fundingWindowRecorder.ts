@@ -1,25 +1,27 @@
 import { prisma } from "./prisma";
 import { fetchAllMarkPrices } from "./binance";
+import { getSettings } from "./settings";
 
-const RATE_THRESHOLD = 0.03; // 3%
-const WINDOW_MS = 60_000;    // 1 min before + 1 min after
+const WINDOW_MS = 60_000; // 1 min before + 1 min after
 
 /**
  * Stateless check — called on every mark-price poll (every ~2s from the client).
+ * Threshold is read from settings (configurable via Settings page).
  * Finds qualifying symbols inside their funding window and writes a price snapshot.
- * Works on Vercel serverless with no persistent state or cron job required.
  */
 export async function recordIfInWindow(): Promise<void> {
   const now = new Date();
   const nowMs = now.getTime();
+
+  const { fundingRateThreshold: threshold } = await getSettings();
 
   const symbols = await prisma.symbol.findMany({
     select: { name: true, fundingRate: true, nextFundingTime: true },
     where: {
       nextFundingTime: { not: null },
       OR: [
-        { fundingRate: { gte: RATE_THRESHOLD } },
-        { fundingRate: { lte: -RATE_THRESHOLD } },
+        { fundingRate: { gte: threshold } },
+        { fundingRate: { lte: -threshold } },
       ],
     },
   });

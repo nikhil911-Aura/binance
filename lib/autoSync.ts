@@ -1,15 +1,16 @@
 import { prisma } from "./prisma";
 import { fetchAllPremiumData } from "./binance";
 import { loadFundingIntervals } from "./binanceMeta";
+import { getSettings } from "./settings";
 
-const THRESHOLD = 0.03; // 3%
 const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 let lastSyncMs = 0;
 
 /**
- * Scans all Binance futures symbols every 30 seconds.
- * Auto-adds symbols with |fundingRate| >= 3% (marked isFavorite: false).
- * Auto-removes non-favorite symbols whose rate drops below 3%.
+ * Scans all Binance futures symbols every 30 minutes.
+ * Threshold is read from settings (configurable via Settings page).
+ * Auto-adds symbols with |fundingRate| >= threshold (marked isFavorite: false).
+ * Auto-removes non-favorite symbols whose rate drops below threshold.
  * User-added symbols (isFavorite: true) are never touched.
  */
 export async function autoSyncSymbols(): Promise<void> {
@@ -17,7 +18,8 @@ export async function autoSyncSymbols(): Promise<void> {
   if (now - lastSyncMs < SYNC_INTERVAL_MS) return;
   lastSyncMs = now;
 
-  const [allData, intervals] = await Promise.all([
+  const [{ fundingRateThreshold: threshold }, allData, intervals] = await Promise.all([
+    getSettings(),
     fetchAllPremiumData(),
     loadFundingIntervals(),
   ]);
@@ -37,7 +39,7 @@ export async function autoSyncSymbols(): Promise<void> {
   }> = [];
 
   for (const [name, data] of allData) {
-    if (Math.abs(data.fundingRate) >= THRESHOLD && !dbMap.has(name)) {
+    if (Math.abs(data.fundingRate) >= threshold && !dbMap.has(name)) {
       toAdd.push({
         name,
         fundingRate: data.fundingRate,
@@ -53,14 +55,14 @@ export async function autoSyncSymbols(): Promise<void> {
     .filter((s) => {
       if (s.isFavorite) return false;
       const d = allData.get(s.name);
-      if (!d) return false; // symbol gone from Binance — leave it, don't auto-remove
-      return Math.abs(d.fundingRate) < THRESHOLD;
+      if (!d) return false;
+      return Math.abs(d.fundingRate) < threshold;
     })
     .map((s) => s.id);
 
   if (toAdd.length > 0) {
     await prisma.symbol.createMany({ data: toAdd, skipDuplicates: true });
-    console.log(`[auto-sync] Added: ${toAdd.map((s) => s.name).join(", ")}`);
+    console.log(`[auto-sync] Added: ${toAdd.map((s) => s.name).join(", ")} (threshold=${(threshold * 100).toFixed(2)}%)`);
   }
   if (toRemoveIds.length > 0) {
     await prisma.symbol.deleteMany({ where: { id: { in: toRemoveIds } } });

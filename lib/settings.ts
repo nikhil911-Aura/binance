@@ -4,12 +4,14 @@ export type AppSettings = {
   binanceUrl: string;
   binanceApiKey: string;
   binanceApiSecret: string;
+  fundingRateThreshold: number; // decimal e.g. 0.03 = 3%
 };
 
 const DEFAULTS: AppSettings = {
   binanceUrl: process.env.BINANCE_TESTNET_URL ?? "https://testnet.binancefuture.com",
   binanceApiKey: process.env.BINANCE_TESTNET_API_KEY ?? "",
   binanceApiSecret: process.env.BINANCE_TESTNET_API_SECRET ?? "",
+  fundingRateThreshold: 0.03,
 };
 
 let cache: { settings: AppSettings; at: number } | null = null;
@@ -21,10 +23,12 @@ export async function getSettings(): Promise<AppSettings> {
   const rows = await prisma.setting.findMany();
   const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
 
+  const rawThreshold = parseFloat(map["fundingRateThreshold"] ?? "");
   const settings: AppSettings = {
     binanceUrl: map["binanceUrl"] ?? DEFAULTS.binanceUrl,
     binanceApiKey: map["binanceApiKey"] ?? DEFAULTS.binanceApiKey,
     binanceApiSecret: map["binanceApiSecret"] ?? DEFAULTS.binanceApiSecret,
+    fundingRateThreshold: isNaN(rawThreshold) ? DEFAULTS.fundingRateThreshold : rawThreshold,
   };
 
   cache = { settings, at: Date.now() };

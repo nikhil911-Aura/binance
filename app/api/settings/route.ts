@@ -26,6 +26,7 @@ export async function GET() {
     binanceApiSecretMasked: secretFromDb ? maskValue(map["binanceApiSecret"]) : null,
     binanceApiKeyFromDb: keyFromDb,
     binanceApiSecretFromDb: secretFromDb,
+    fundingRateThreshold: settings.fundingRateThreshold,
   });
 }
 
@@ -44,6 +45,7 @@ export async function POST(req: Request) {
     binanceUrl?: string;
     binanceApiKey?: string;
     binanceApiSecret?: string;
+    fundingRateThreshold?: number;
   };
 
   const updates: { key: string; value: string }[] = [];
@@ -51,6 +53,12 @@ export async function POST(req: Request) {
   if (body.binanceApiKey !== undefined) updates.push({ key: "binanceApiKey", value: body.binanceApiKey.trim() });
   if (body.binanceApiSecret !== undefined && body.binanceApiSecret.length > 0) {
     updates.push({ key: "binanceApiSecret", value: body.binanceApiSecret.trim() });
+  }
+  if (body.fundingRateThreshold !== undefined) {
+    const val = Number(body.fundingRateThreshold);
+    if (!isNaN(val) && val >= 0) {
+      updates.push({ key: "fundingRateThreshold", value: String(val) });
+    }
   }
 
   await Promise.all(

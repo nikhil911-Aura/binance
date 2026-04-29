@@ -19,6 +19,7 @@ export default function SettingsPage() {
   const [apiSecretMasked, setApiSecretMasked] = useState<string | null>(null);
   const [apiSecretFromDb, setApiSecretFromDb] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const [fundingThreshold, setFundingThreshold] = useState("3");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -36,6 +37,7 @@ export default function SettingsPage() {
         setSecretSet(data.binanceApiSecretSet ?? false);
         setApiSecretMasked(data.binanceApiSecretMasked ?? null);
         setApiSecretFromDb(data.binanceApiSecretFromDb ?? false);
+        setFundingThreshold(String((data.fundingRateThreshold ?? 0.03) * 100));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -45,7 +47,12 @@ export default function SettingsPage() {
     setError("");
     setSaved(false);
     try {
-      const body: Record<string, string> = { binanceUrl, binanceApiKey: apiKey };
+      const thresholdVal = parseFloat(fundingThreshold);
+      const body: Record<string, string | number> = {
+        binanceUrl,
+        binanceApiKey: apiKey,
+        fundingRateThreshold: isNaN(thresholdVal) ? 0.03 : thresholdVal / 100,
+      };
       if (apiSecret.length > 0) body.binanceApiSecret = apiSecret;
 
       const res = await fetch("/api/settings", {
@@ -227,6 +234,47 @@ export default function SettingsPage() {
                   <p className="mt-1.5 text-xs text-red-500">No secret set — paste your API secret above</p>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Funding Rate Threshold */}
+          <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
+            <h2 className="mb-1 text-sm font-semibold text-neutral-200">Auto-sync Funding Rate Threshold</h2>
+            <p className="mb-4 text-xs text-neutral-500">
+              Symbols with a funding rate above this value (or below its negative) are automatically
+              added to the dashboard and their price is recorded during funding windows.
+              Symbols already marked as <span className="text-amber-400">★ favorites</span> are never affected.
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="relative w-40">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={fundingThreshold}
+                  onChange={(e) => setFundingThreshold(e.target.value)}
+                  className="w-full rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 pr-8 font-mono text-sm outline-none focus:border-emerald-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-neutral-500">%</span>
+              </div>
+              <p className="text-xs text-neutral-500">
+                Current: symbols with <span className="font-mono text-neutral-300">|rate| ≥ {fundingThreshold}%</span> are auto-added
+              </p>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {["1", "2", "3", "5", "10", "20", "50"].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setFundingThreshold(v)}
+                  className={`rounded border px-3 py-1 text-xs transition-colors ${
+                    fundingThreshold === v
+                      ? "border-emerald-600 bg-emerald-950/40 text-emerald-400"
+                      : "border-neutral-700 text-neutral-400 hover:border-neutral-500 hover:text-neutral-200"
+                  }`}
+                >
+                  {v}%
+                </button>
+              ))}
             </div>
           </div>
 
