@@ -98,10 +98,10 @@ export default function FundingWindowsPage() {
 
       {/* Info banner */}
       <div className="mb-6 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-neutral-400">
-        Records 1-second price snapshots for symbols with{" "}
+        Records price snapshots for symbols with{" "}
         <span className="font-mono text-neutral-200">|fundingRate| ≥ {thresholdPct}%</span> — starting
-        1 minute before and ending 1 minute after each funding event. The cron job detects
-        qualifying symbols and streams prices automatically.
+        1 minute before and ending 1 minute after each funding event. Data is captured every minute
+        via cron, with 3 fixed reference points (T−1min, T=0, T+1min) backfilled from Binance after each event.
       </div>
 
       {/* Filter */}
@@ -132,9 +132,9 @@ export default function FundingWindowsPage() {
         <div className="rounded-lg border border-dashed border-neutral-700 px-6 py-12 text-center">
           <p className="text-base font-medium text-neutral-300">No recordings yet</p>
           <p className="mt-2 text-sm text-neutral-500">
-            The cron job records data automatically when a symbol with{" "}
+            Data is recorded automatically when a symbol with{" "}
             <span className="font-mono">|rate| ≥ {thresholdPct}%</span> is within 1 minute of its
-            funding time. Make sure the cron process is running.
+            funding time. Make sure cron-job.org is running.
           </p>
         </div>
       ) : (
