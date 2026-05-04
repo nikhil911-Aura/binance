@@ -45,6 +45,7 @@ export async function recordIfInWindow(): Promise<void> {
       fundingTime: s.nextFundingTime!,
       fundingRate: s.fundingRate!,
       phase: nowMs < s.nextFundingTime!.getTime() ? "before" : "after",
+      source: "snapshot",
     }));
 
   if (creates.length > 0) {

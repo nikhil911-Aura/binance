@@ -82,7 +82,9 @@ model FundingWindowPrice {
   fundingTime DateTime
   fundingRate Float
   phase       String   // "before" | "after"
+  source      String   @default("snapshot") // "snapshot" | "kline"
 
   @@index([symbol, fundingTime])
   @@index([fundingTime])
+  @@index([source])
 }

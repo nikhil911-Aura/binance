@@ -63,6 +63,26 @@ export type Kline = {
   volume: number;
 };
 
+/** Fetch 1-second mark price klines for a symbol between startTime and endTime. */
+export async function fetchMarkPriceKlines1s(
+  symbol: string,
+  startTime: number,
+  endTime: number,
+): Promise<{ time: number; price: number }[]> {
+  const url = `${BINANCE_API_URL}/fapi/v1/markPriceKlines?symbol=${encodeURIComponent(symbol)}&interval=1s&startTime=${startTime}&endTime=${endTime}&limit=200`;
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return [];
+    const raw = (await res.json()) as unknown[][];
+    return raw.map((r) => ({
+      time: r[0] as number,
+      price: parseFloat(r[4] as string),
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** Fetch 1-minute mark price klines for a symbol between startTime and endTime. */
 export async function fetchMarkPriceKlines(
   symbol: string,
