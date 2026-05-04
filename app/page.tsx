@@ -7,12 +7,18 @@ import Dashboard from "@/components/Dashboard";
 import StatsCards from "@/components/StatsCards";
 import PriceHistorySync from "@/components/PriceHistorySync";
 import { getSettings, PRESETS } from "@/lib/settings";
+import { autoSyncSymbols, resetAutoSyncTimer } from "@/lib/autoSync";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function HomePage() {
-  await refreshStaleSymbols();
+export default async function HomePage({ searchParams }: { searchParams: { sync?: string } }) {
+  if (searchParams.sync === "1") {
+    resetAutoSyncTimer();
+    await autoSyncSymbols();
+  } else {
+    await refreshStaleSymbols();
+  }
   const settings = await getSettings();
   const isMainnet = settings.binanceUrl === PRESETS.mainnet;
   const symbols = await prisma.symbol.findMany({ orderBy: { createdAt: "desc" } });

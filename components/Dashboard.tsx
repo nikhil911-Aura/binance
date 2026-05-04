@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import SymbolTable from "./SymbolTable";
 import OrderPanel from "./OrderPanel";
 import { useToast } from "./Toast";
@@ -43,6 +44,13 @@ export default function Dashboard({
 }) {
   const [orderVersion, setOrderVersion] = useState(0);
   const { toast } = useToast();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (window.location.search.includes("sync=1")) {
+      router.replace("/");
+    }
+  }, []);
 
   /** Returns results array so QuantityModal can display per-symbol errors. */
   async function handlePlaceOrders(

@@ -76,7 +76,7 @@ export default function SettingsPage() {
         setApiSecretFromDb(true);
         setApiSecret("");
       }
-      setTimeout(() => router.push("/"), 1000);
+      setTimeout(() => router.push("/?sync=1"), 1000);
     } catch {
       setError("Failed to save settings");
     } finally {
