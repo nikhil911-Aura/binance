@@ -44,13 +44,19 @@ export default function FundingWindowsPage() {
   const [pointsMap, setPointsMap] = useState<Record<string, PricePoint[]>>({});
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [symbolFilter, setSymbolFilter] = useState("");
+  const [threshold, setThreshold] = useState<number | null>(null);
 
   useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => setThreshold(d.fundingRateThreshold ?? 0.03));
     fetch("/api/funding-windows")
       .then((r) => r.json())
       .then((data: FundingEvent[]) => setEvents(data))
       .finally(() => setLoading(false));
   }, []);
+
+  const thresholdPct = threshold != null ? (threshold * 100).toFixed(2).replace(/\.?0+$/, "") : "3";
 
   async function selectEvent(event: FundingEvent) {
     const key = `${event.symbol}_${event.fundingTime}`;
@@ -93,7 +99,7 @@ export default function FundingWindowsPage() {
       {/* Info banner */}
       <div className="mb-6 rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3 text-sm text-neutral-400">
         Records 1-second price snapshots for symbols with{" "}
-        <span className="font-mono text-neutral-200">|fundingRate| ≥ 3%</span> — starting
+        <span className="font-mono text-neutral-200">|fundingRate| ≥ {thresholdPct}%</span> — starting
         1 minute before and ending 1 minute after each funding event. The cron job detects
         qualifying symbols and streams prices automatically.
       </div>
@@ -127,7 +133,7 @@ export default function FundingWindowsPage() {
           <p className="text-base font-medium text-neutral-300">No recordings yet</p>
           <p className="mt-2 text-sm text-neutral-500">
             The cron job records data automatically when a symbol with{" "}
-            <span className="font-mono">|rate| ≥ 3%</span> is within 1 minute of its
+            <span className="font-mono">|rate| ≥ {thresholdPct}%</span> is within 1 minute of its
             funding time. Make sure the cron process is running.
           </p>
         </div>
