@@ -26,8 +26,8 @@ export async function getSettings(): Promise<AppSettings> {
   const rawThreshold = parseFloat(map["fundingRateThreshold"] ?? "");
   const settings: AppSettings = {
     binanceUrl: map["binanceUrl"] ?? DEFAULTS.binanceUrl,
-    binanceApiKey: map["binanceApiKey"] ?? DEFAULTS.binanceApiKey,
-    binanceApiSecret: map["binanceApiSecret"] ?? DEFAULTS.binanceApiSecret,
+    binanceApiKey: map["binanceApiKey"] || DEFAULTS.binanceApiKey,
+    binanceApiSecret: map["binanceApiSecret"] || DEFAULTS.binanceApiSecret,
     fundingRateThreshold: isNaN(rawThreshold) ? DEFAULTS.fundingRateThreshold : rawThreshold,
   };
 
