@@ -13,6 +13,10 @@ let lastSyncMs = 0;
  * Auto-removes non-favorite symbols whose rate drops below threshold.
  * User-added symbols (isFavorite: true) are never touched.
  */
+export function resetAutoSyncTimer(): void {
+  lastSyncMs = 0;
+}
+
 export async function autoSyncSymbols(): Promise<void> {
   const now = Date.now();
   if (now - lastSyncMs < SYNC_INTERVAL_MS) return;

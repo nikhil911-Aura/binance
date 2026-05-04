@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSettings, invalidateSettingsCache } from "@/lib/settings";
+import { resetAutoSyncTimer } from "@/lib/autoSync";
 
 export const dynamic = "force-dynamic";
 
@@ -72,5 +73,6 @@ export async function POST(req: Request) {
   );
 
   invalidateSettingsCache();
+  resetAutoSyncTimer();
   return NextResponse.json({ ok: true });
 }

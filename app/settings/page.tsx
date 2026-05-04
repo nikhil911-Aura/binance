@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const PRESETS = [
@@ -9,6 +10,7 @@ const PRESETS = [
 ];
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [binanceUrl, setBinanceUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [apiKeySet, setApiKeySet] = useState(false);
@@ -74,7 +76,7 @@ export default function SettingsPage() {
         setApiSecretFromDb(true);
         setApiSecret("");
       }
-      setTimeout(() => setSaved(false), 3000);
+      setTimeout(() => router.push("/"), 1000);
     } catch {
       setError("Failed to save settings");
     } finally {
