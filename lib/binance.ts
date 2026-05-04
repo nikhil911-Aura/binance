@@ -63,13 +63,13 @@ export type Kline = {
   volume: number;
 };
 
-/** Fetch 1-second mark price klines for a symbol between startTime and endTime. */
+/** Fetch 1-minute klines for a symbol between startTime and endTime. Always uses mainnet. */
 export async function fetchMarkPriceKlines1s(
   symbol: string,
   startTime: number,
   endTime: number,
 ): Promise<{ time: number; price: number }[]> {
-  const url = `${BINANCE_API_URL}/fapi/v1/markPriceKlines?symbol=${encodeURIComponent(symbol)}&interval=1s&startTime=${startTime}&endTime=${endTime}&limit=200`;
+  const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${encodeURIComponent(symbol)}&interval=1m&startTime=${startTime}&endTime=${endTime}&limit=10`;
   try {
     const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
     if (!res.ok) return [];
